@@ -1,0 +1,19 @@
+name: utopia
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - geopandas
+  - rasterio
+  - netcdf4
+  - numpy
+  - scipy
+  - pandas
+  - requests
+  - beautifulsoup4
+  - shapely
+  - tippecanoe
+  - pip
+  - pip:
+    - pmtiles

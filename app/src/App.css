@@ -1,0 +1,1188 @@
+/* ── Top Bar ───────────────────────────────────────────────────────── */
+
+.top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: rgba(16, 16, 22, 0.78);
+  backdrop-filter: blur(12px);
+  z-index: 20;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.top-bar-left {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.top-bar-center {
+  flex: 1;
+  min-width: 0;
+}
+
+.top-bar-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.top-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #a0a0b0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+}
+
+.top-bar-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: #e0e0e0;
+}
+
+.formula-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: #e0e0e0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.formula-input::placeholder {
+  color: #505060;
+}
+
+.formula-input:focus {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(255,255,255,0.06);
+}
+
+.formula-input-error {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* ── Formula Display (interactive token view) ─────────────────────── */
+
+.formula-display {
+  width: 100%;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  cursor: text;
+  user-select: none;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.formula-display:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.formula-display:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(255,255,255,0.06);
+}
+
+.formula-display-error {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.formula-placeholder {
+  color: #505060;
+  pointer-events: none;
+}
+
+.formula-token-number {
+  cursor: ew-resize;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: 0 1px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  transition: background 0.12s;
+}
+
+.formula-token-number:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.formula-token-ident {
+  color: #e0e0e0;
+}
+
+.formula-token-op {
+  color: #707080;
+  padding: 0 1px;
+}
+
+.formula-error-hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: help;
+}
+
+/* ── Axis Menu ─────────────────────────────────────────────────────── */
+
+.axis-menu {
+  position: absolute;
+  top: 42px;
+  left: 0;
+  min-width: 200px;
+  background: rgba(24, 24, 32, 0.96);
+  backdrop-filter: blur(16px);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  padding: 4px;
+  z-index: 30;
+}
+
+.axis-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #b0b0c0;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.axis-menu-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.axis-menu-hint {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #505060;
+  transition: color 0.12s;
+}
+
+.axis-menu-item:hover .axis-menu-hint {
+  color: #707080;
+}
+
+.axis-menu-item.active .axis-menu-hint {
+  color: rgba(96, 165, 250, 0.5);
+}
+
+.axis-menu-hotkey {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #505060;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.4;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.axis-menu-item:hover .axis-menu-hotkey {
+  color: #808090;
+  border-color: rgba(255,255,255,0.12);
+}
+
+.axis-menu-item.active .axis-menu-hotkey {
+  color: rgba(96, 165, 250, 0.6);
+  border-color: rgba(96, 165, 250, 0.2);
+}
+
+.axis-menu-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #e0e0e0;
+}
+
+.axis-menu-item.active {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.axis-more-wrapper {
+  position: relative;
+}
+
+.axis-more-trigger {
+  cursor: default;
+}
+
+.axis-submenu {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  padding-left: 6px;
+  z-index: 1001;
+}
+
+/* ── Save / Load Menu ──────────────────────────────────────────────── */
+
+.save-menu {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  min-width: 160px;
+  background: rgba(24, 24, 32, 0.96);
+  backdrop-filter: blur(16px);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  padding: 4px;
+  z-index: 30;
+}
+
+.save-menu-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #b0b0c0;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.save-menu-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #e0e0e0;
+}
+
+/* ── Axis Info Tooltip (centered on screen) ────────────────────────── */
+
+.axis-info-tooltip {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 380px;
+  max-width: calc(100vw - 48px);
+  background: rgba(16, 16, 22, 0.72);
+  backdrop-filter: blur(24px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  padding: 20px 22px;
+  z-index: 50;
+  pointer-events: none;
+  animation: axis-info-fade-in 67ms ease-out;
+}
+
+@keyframes axis-info-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.axis-info-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin-bottom: 14px;
+  letter-spacing: 0.01em;
+}
+
+.axis-info-row {
+  margin-bottom: 10px;
+}
+
+.axis-info-row:last-child {
+  margin-bottom: 0;
+}
+
+.axis-info-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(251, 146, 60, 0.7);
+  margin-bottom: 3px;
+}
+
+.axis-info-text {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Share Modal ───────────────────────────────────────────────────── */
+
+.share-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-modal {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  background: rgba(24, 24, 34, 0.98);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 16px 64px rgba(0,0,0,0.6);
+}
+
+.share-modal-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 16px;
+}
+
+.share-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.03);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.share-option:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.share-option-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 3px;
+}
+
+.share-option-desc {
+  font-size: 12px;
+  color: #707080;
+  line-height: 1.4;
+}
+
+.share-copy-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  color: #a0a0b0;
+  transition: background 0.12s;
+}
+
+.share-option:hover .share-copy-btn {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.share-option:disabled,
+.share-option-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.share-option:disabled:hover,
+.share-option-disabled:hover {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.06);
+}
+
+.share-option:disabled:hover .share-copy-btn,
+.share-option-disabled:hover .share-copy-btn {
+  background: rgba(255,255,255,0.06);
+  color: #a0a0b0;
+}
+
+.share-coming-soon {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #909098;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.share-copy-btn-disabled {
+  opacity: 0.6;
+}
+
+.share-privacy {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.1);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #808098;
+}
+
+/* ── Map Hover Tooltip ─────────────────────────────────────────────── */
+
+.map-hover-tooltip {
+  position: absolute;
+  transform: translate(12px, -100%);
+  margin-top: -8px;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: pre-wrap;
+  pointer-events: none;
+  z-index: 25;
+}
+
+/* ── Curve Panel ───────────────────────────────────────────────────── */
+
+.curve-panel {
+  position: absolute;
+  background: rgba(20, 20, 28, 0.82);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  z-index: 10;
+  color: #e0e0e0;
+  max-width: calc(100vw - 48px);
+}
+
+.curve-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  color: #a0a0b0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-nav-arrows {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.panel-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: none;
+  background: rgba(255,255,255,0.06);
+  color: #808090;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.panel-nav-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #e0e0e0;
+}
+
+.curve-subtitle {
+  text-align: center;
+  font-size: 9px;
+  color: rgba(255,255,255,0.3);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  margin: 0;
+  padding: 0;
+  line-height: 14px;
+  height: 14px;
+}
+
+.curve-bottom-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  height: 20px;
+}
+
+.unit-toggle-bottom {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.curve-reset-btn {
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: monospace;
+  color: #606068;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.curve-reset-btn:hover {
+  color: #b0b0c0;
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.unit-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: monospace;
+  color: #808090;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.unit-btn.active {
+  color: #e0e0e0;
+  background: rgba(255,255,255,0.12);
+}
+
+.unit-btn:hover:not(.active) {
+  color: #b0b0c0;
+}
+
+/* ── Draw Mode ─────────────────────────────────────────────────────── */
+
+.draw-cursor {
+  position: absolute;
+  border: 2px solid rgba(251, 146, 60, 0.85);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 15;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.3);
+  background: rgba(251, 146, 60, 0.10);
+}
+
+
+/* ── Draw Tooltip ─────────────────────────────────────────────────── */
+
+.draw-tooltip {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 22px;
+  background: rgba(16, 16, 22, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  z-index: 20;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.draw-tooltip-visible {
+  opacity: 1;
+}
+
+.draw-tooltip-key {
+  font-weight: 600;
+  color: rgba(251, 146, 60, 0.9);
+}
+
+.draw-tooltip-sep {
+  display: inline-block;
+  width: 20px;
+}
+
+/* ── Brush Panel ──────────────────────────────────────────────────── */
+
+.brush-panel {
+  position: absolute;
+  left: 24px;
+  bottom: 80px;
+  background: rgba(16, 16, 22, 0.78);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 16px 10px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.brush-panel-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(251, 146, 60, 0.7);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.brush-hslider-area {
+  position: relative;
+  width: 220px;
+  height: 72px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+}
+
+.brush-hslider-track {
+  position: absolute;
+  left: 30px;
+  right: 30px;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 1px;
+}
+
+.brush-hslider-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(251, 146, 60, 0.85);
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.35);
+  pointer-events: none;
+  transition: width 0.06s, height 0.06s;
+}
+
+.brush-panel-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  user-select: none;
+  padding-top: 2px;
+}
+
+.brush-shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brush-action-label {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: inherit;
+  min-width: 34px;
+  text-align: center;
+  border: 1px solid rgba(251, 146, 60, 0.4);
+  background: rgba(251, 146, 60, 0.12);
+  color: rgba(251, 146, 60, 0.85);
+}
+
+.brush-action-erase {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.10);
+  color: rgba(239, 68, 68, 0.85);
+}
+
+.brush-action-size {
+  border-color: rgba(147, 197, 253, 0.35);
+  background: rgba(147, 197, 253, 0.08);
+  color: rgba(147, 197, 253, 0.8);
+}
+
+/* ── Touch mode toggle ─────────────────────────────────────────── */
+
+.brush-mode-toggle {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.brush-mode-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.brush-mode-btn.brush-mode-active {
+  border-color: rgba(251, 146, 60, 0.7);
+  background: rgba(251, 146, 60, 0.15);
+  color: rgba(251, 146, 60, 0.95);
+}
+
+.brush-mode-btn.brush-mode-erase {
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.12);
+  color: rgba(239, 68, 68, 0.9);
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 60%, transparent 60%),
+    linear-gradient(135deg, transparent 65%, rgba(255,255,255,0.10) 65%, rgba(255,255,255,0.10) 75%, transparent 75%);
+  border-radius: 0 0 12px 0;
+}
+
+/* ── Time Panel ──────────────────────────────────────────────────── */
+
+.time-panel {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(16, 16, 22, 0.78);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 18px 8px;
+  z-index: 12;
+  min-width: 360px;
+  max-width: 560px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  user-select: none;
+}
+
+.time-panel-disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.time-panel-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.time-play-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(251, 146, 60, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.time-play-btn:hover {
+  background: rgba(251, 146, 60, 0.12);
+  border-color: rgba(251, 146, 60, 0.4);
+}
+
+.time-year-display {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  min-width: 42px;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.time-era-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Teal "PROJECTIONS" badge above the slider, only shown when the user
+   scrubs past the last historical year. */
+.time-projection-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.18);
+  border: 1px solid rgba(45, 212, 191, 0.55);
+  color: #5eead4;
+  text-transform: uppercase;
+  white-space: nowrap;
+  user-select: none;
+  margin-left: 2px;
+}
+
+.time-slider-area {
+  position: relative;
+  height: 20px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.time-slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.time-slider-past {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(147, 197, 253, 0.3);
+  border-radius: 2px;
+}
+
+/* Future portion of the track (when the active axis has projections). Uses a
+   teal tint that visually matches the PROJECTIONS badge above. */
+.time-slider-projection-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(45, 212, 191, 0.28);
+  border-radius: 2px;
+}
+
+.time-slider-future {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.time-slider-now {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 1px;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.2);
+}
+
+.time-slider-now::after {
+  content: 'NOW';
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 7px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* Zebra-stripe segments delineate each data year's snap region.  The two
+   tones differ only slightly so the effect reads as a textured ruler rather
+   than competing colours -- subtle on dense annual data (looks like fine
+   hatching), legible on sparse data (4-5 distinct stripes).  Projection-range
+   stripes pick up matching teal tones to harmonise with the projection wash
+   underneath. */
+.time-slider-segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+}
+
+.time-slider-segment-0 { background: rgba(255, 255, 255, 0.04); }
+.time-slider-segment-1 { background: rgba(255, 255, 255, 0.22); }
+
+.time-slider-segment-proj.time-slider-segment-0 { background: rgba(45, 212, 191, 0.16); }
+.time-slider-segment-proj.time-slider-segment-1 { background: rgba(45, 212, 191, 0.42); }
+
+.time-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(251, 146, 60, 0.9);
+  box-shadow: 0 0 6px rgba(251, 146, 60, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: left 0.05s;
+}
+
+.time-slider-thumb-proj {
+  background: rgba(45, 212, 191, 0.95);
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.55);
+}
+
+.time-slider-labels {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.2);
+  padding-top: 2px;
+}
+
+.time-slider-labels .time-label-now {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+/* ── Data Info Panel ──────────────────────────────────────────────── */
+
+.axis-detail-content {
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+  position: relative;
+}
+
+.axis-detail-content p {
+  margin: 0 0 6px 0;
+}
+
+.axis-detail-close {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  z-index: 1;
+}
+
+.axis-detail-close:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.axis-detail-units {
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+}
+
+.axis-detail-source {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  margin-bottom: 0 !important;
+}
+
+.axis-detail-source a {
+  color: rgba(180, 160, 120, 0.8);
+  text-decoration: underline;
+}
+
+.axis-detail-source a:hover {
+  color: rgba(220, 200, 150, 1);
+}
+
+.axis-detail-range {
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+}
+
+.axis-detail-hint {
+  margin-top: 2px;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 9px;
+  text-align: right;
+  line-height: 1.2;
+}
+
+.axis-detail-toggle {
+  position: absolute;
+  bottom: 30px;
+  right: 24px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(16, 16, 22, 0.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.axis-detail-toggle:hover {
+  background: rgba(30, 30, 40, 0.8);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* "Viewing shared session" indicator -- shown only when the page was opened
+   via a #view= permalink. Sits below the top bar, centered, so it's obvious
+   without competing with the formula bar. */
+.shared-session-pill {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 14px;
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.14);
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  color: #5eead4;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  user-select: none;
+  z-index: 25;
+  backdrop-filter: blur(8px);
+}
+
+.shared-session-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5eead4;
+  box-shadow: 0 0 8px rgba(94, 234, 212, 0.6);
+  animation: shared-pulse 2s ease-in-out infinite;
+}
+
+@keyframes shared-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+.shared-session-exit {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(45, 212, 191, 0.4);
+  background: transparent;
+  color: #5eead4;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.shared-session-exit:hover {
+  background: rgba(45, 212, 191, 0.18);
+  color: #99f6e4;
+}

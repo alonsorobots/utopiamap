@@ -1,0 +1,15 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://utopiamap.com",
+      "https://www.utopiamap.com",
+      "https://*.pages.dev",
+      "http://localhost:5173",
+      "http://localhost:4173"
+    ],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["range", "if-match", "if-none-match"],
+    "ExposeHeaders": ["etag", "content-length", "content-range", "accept-ranges"],
+    "MaxAgeSeconds": 3600
+  }
+]

@@ -1,0 +1,32 @@
+# Dependencies / build artifacts
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+*.env
+.env.local
+.env.*.local
+
+# Local data (not tracked; lives on R2 / disk only)
+data/
+*.pmtiles
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Local-only assets (Numbeo / internal docs we hold back from the public repo).
+# Anything you don't want to publish but want to keep around locally goes here.
+_private/

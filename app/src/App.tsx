@@ -500,8 +500,8 @@ const AXES: Record<string, AxisConfig> = {
     label: 'Agriculture',
     dataMin: 0,
     dataMax: 100,
-    unit: 'Activity Index',
-    formatValue: (norm) => `${Math.round(norm * 100)} Activity Index`,
+    unit: 'AI',
+    formatValue: (norm) => `${Math.round(norm * 100)} AI`,
     formatHover: (norm) => {
       const ai = Math.round(norm * 100);
       let band: string;

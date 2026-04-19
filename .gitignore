@@ -27,6 +27,9 @@ venv/
 .idea/
 *.swp
 
+# Cloudflare wrangler local state
+.wrangler/
+
 # Local-only assets. Anything you don't want to publish but want to
 # keep around locally goes here.
 _private/

@@ -1015,7 +1015,19 @@ export function createHeatmapLayer(): CustomLayerInterface {
       rebuildProgram(gl, [activeAxisId], null);
 
       setRepaintCallback(() => map.triggerRepaint());
-      loadCatalog().then(() => map.triggerRepaint());
+      loadCatalog().then(() => {
+        // Drop any synthetic-data textures that were cached during the brief
+        // window before the catalog arrived. Otherwise the cache-hit path
+        // keeps serving synthetic pixels for the initial viewport until the
+        // user pans/zooms enough to evict them -- which manifests as "the
+        // default axis shows no real data until I move the timeline or
+        // change feature". Forcing a fresh cache miss routes every visible
+        // tile through the unambiguous fetch-real-data path.
+        for (const tex of tileCache.values()) gl.deleteTexture(tex);
+        tileCache.clear();
+        realTileLoaded.clear();
+        map.triggerRepaint();
+      });
     },
 
     prerender() {

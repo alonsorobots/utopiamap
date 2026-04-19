@@ -32,7 +32,7 @@ import type { ShareableState } from './shareLink';
 import './App.css';
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-const REPO_URL = 'https://github.com/alonsorobots/utopia';
+const REPO_URL = 'https://github.com/alonsorobots/utopiamap';
 const SAVE_KEY = 'utopia-prefs-v1';
 
 interface SavedState {

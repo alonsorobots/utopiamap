@@ -1,8 +1,9 @@
 import geopandas as gpd
 from pathlib import Path
 
-DATA = Path("/Users/alonsorobots/MyWork/RESEARCH/utopia/data")
-PUBLIC = Path("/Users/alonsorobots/MyWork/RESEARCH/utopia/app/public")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DATA = REPO_ROOT / "data"
+PUBLIC = REPO_ROOT / "app" / "public"
 
 print("Loading 10m country boundaries...")
 shp = DATA / "NaturalEarth" / "ne_10m_admin_0_countries_dir" / "ne_10m_admin_0_countries.shp"

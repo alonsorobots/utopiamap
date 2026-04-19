@@ -2,10 +2,15 @@ import urllib.request
 import zipfile
 import io
 import os
+from pathlib import Path
 import geopandas as gpd
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DATA = REPO_ROOT / "data"
+PUBLIC = REPO_ROOT / "app" / "public"
+
 url = "https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_1_states_provinces_lines.zip"
-out_dir = "/Users/alonsorobots/MyWork/RESEARCH/utopia/data/NaturalEarth/states"
+out_dir = str(DATA / "NaturalEarth" / "states")
 
 print("Downloading Natural Earth 50m states/provinces lines...")
 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -23,7 +28,7 @@ gdf = gdf[['geometry']]
 # Simplify a bit to keep file size small
 gdf.geometry = gdf.geometry.simplify(0.02)
 
-out_geojson = "/Users/alonsorobots/MyWork/RESEARCH/utopia/app/public/states.geojson"
+out_geojson = str(PUBLIC / "states.geojson")
 print(f"Saving to {out_geojson}...")
 gdf.to_file(out_geojson, driver="GeoJSON")
 

@@ -27,6 +27,6 @@ venv/
 .idea/
 *.swp
 
-# Local-only assets (Numbeo / internal docs we hold back from the public repo).
-# Anything you don't want to publish but want to keep around locally goes here.
+# Local-only assets. Anything you don't want to publish but want to
+# keep around locally goes here.
 _private/

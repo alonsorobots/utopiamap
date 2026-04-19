@@ -41,6 +41,7 @@ interface CurveEditorProps {
 const PAD = 12;
 const PAD_L = 34;
 const HANDLE_HIT_R = 22;
+const HANDLE_HIT_R_MIN = 7;
 const AXIS_LABEL_H = 30;
 const MIN_GAP = 0.02;
 const MAX_POINTS = 8;
@@ -174,6 +175,26 @@ export function CurveEditor({
     return sortedPoints;
   }, [sortedPoints, previewRaw]);
 
+  // Per-vertex hit radius. Lenient (HANDLE_HIT_R) when neighbors are far
+  // away, but capped at half the screen-space distance to the nearest other
+  // vertex so overlapping hit zones don't make tightly-packed handles
+  // unselectable.
+  const hitRadii = useMemo(() => {
+    if (displayPoints.length <= 1) return [HANDLE_HIT_R];
+    const screen = displayPoints.map((p) => toSvg(p.x, p.y, svgW, svgH));
+    return screen.map((here, i) => {
+      let minDist = Infinity;
+      for (let j = 0; j < screen.length; j++) {
+        if (j === i) continue;
+        const dx = screen[j].cx - here.cx;
+        const dy = screen[j].cy - here.cy;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < minDist) minDist = d;
+      }
+      return Math.max(HANDLE_HIT_R_MIN, Math.min(HANDLE_HIT_R, minDist / 2));
+    });
+  }, [displayPoints, svgW, svgH]);
+
   useEffect(() => {
     onCurveChange(axisId, evaluateCurve(displayPoints));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -291,11 +312,12 @@ export function CurveEditor({
       const localY = e.clientY - rect.top;
       const pos = fromSvg(localX, localY, svgW, svgH);
 
-      const hitIdx = sortedPoints.findIndex((p) => {
+      const hitIdx = sortedPoints.findIndex((p, i) => {
         const sp = toSvg(p.x, p.y, svgW, svgH);
         const dx = localX - sp.cx;
         const dy = localY - sp.cy;
-        return dx * dx + dy * dy <= HANDLE_HIT_R * HANDLE_HIT_R;
+        const r = hitRadii[i] ?? HANDLE_HIT_R;
+        return dx * dx + dy * dy <= r * r;
       });
 
       if (hitIdx >= 0) {
@@ -318,7 +340,7 @@ export function CurveEditor({
         }
       }
     },
-    [svgW, svgH, sortedPoints],
+    [svgW, svgH, sortedPoints, hitRadii],
   );
 
   const tooltipInfo = dragIdx !== null && sortedPoints[dragIdx]
@@ -471,7 +493,7 @@ export function CurveEditor({
           const sp = toSvg(pt.x, pt.y, svgW, svgH);
           return (
             <g key={i}>
-              <circle cx={sp.cx} cy={sp.cy} r={HANDLE_HIT_R} fill="transparent" style={{ cursor: 'grab' }} onPointerDown={onDown(i)} />
+              <circle cx={sp.cx} cy={sp.cy} r={hitRadii[i] ?? HANDLE_HIT_R} fill="transparent" style={{ cursor: 'grab' }} onPointerDown={onDown(i)} />
               <circle
                 cx={sp.cx}
                 cy={sp.cy}

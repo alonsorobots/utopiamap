@@ -22,6 +22,10 @@ let catalogPromise: Promise<Catalog | null> | null = null;
 const TILES_BASE = (import.meta.env.VITE_TILES_BASE as string | undefined) || '/data/tiles';
 const TILE_PX = 256;
 
+export function getTilesBase(): string {
+  return TILES_BASE;
+}
+
 const archives = new Map<string, PMTiles>();
 const tileDataCache = new Map<string, Uint8Array>();
 const pendingFetches = new Set<string>();

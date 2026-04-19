@@ -17,7 +17,7 @@ import {
   exportPaintedMask,
   importPaintedMask,
 } from './heatmapLayer';
-import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog } from './tileDataLoader';
+import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getTilesBase } from './tileDataLoader';
 import type { FormulaError, PaintedMask } from './heatmapLayer';
 import { CurveEditor } from './CurveEditor';
 import type { AxisConfig, CurvePoint } from './CurveEditor';
@@ -86,7 +86,7 @@ function loadEnergyScores(): Record<string, EnergyData> | null {
   if (energyScores) return energyScores;
   if (energyScoresLoading) return null;
   energyScoresLoading = true;
-  fetch('/data/tiles/energy/energy_scores.json')
+  fetch(`${getTilesBase()}/energy/energy_scores.json`)
     .then(r => r.json())
     .then(data => { energyScores = data; })
     .catch(() => { energyScoresLoading = false; });
@@ -251,7 +251,10 @@ const AXES: Record<string, AxisConfig> = {
     source: 'TerraClimate precipitation data',
     sourceUrl: 'https://www.climatologylab.org/terraclimate.html',
     hoverLabel: 'Precip.',
-    defaultCurve: LINEAR_UP,
+    defaultCurve: [
+      { x: 0,                y: 0 },
+      { x: 550 / 3000,       y: 1 },
+    ],
     infoWidth: 304,
     infoHeight: 185
   },
@@ -304,8 +307,8 @@ const AXES: Record<string, AxisConfig> = {
     sourceUrl: 'https://globalwindatlas.info/',
     hoverLabel: 'Wind speed',
     defaultCurve: [
-      { x: 0, y: 1 },
-      { x: 0.5, y: 0 },
+      { x: 5.5 / 20,  y: 1 },
+      { x: 11.5 / 20, y: 0 },
     ],
     staticYear: 2020,
     infoWidth: 305,
@@ -497,8 +500,8 @@ const AXES: Record<string, AxisConfig> = {
     label: 'Agriculture',
     dataMin: 0,
     dataMax: 100,
-    unit: 'AI',
-    formatValue: (norm) => `${Math.round(norm * 100)} AI`,
+    unit: 'Activity Index',
+    formatValue: (norm) => `${Math.round(norm * 100)} Activity Index`,
     formatHover: (norm) => {
       const ai = Math.round(norm * 100);
       let band: string;
@@ -507,7 +510,7 @@ const AXES: Record<string, AxisConfig> = {
       else if (ai < 60) band = 'Mixed use';
       else if (ai < 85) band = 'Active farmland';
       else band = 'Breadbasket';
-      return `${ai} AI (${band})`;
+      return `${ai} Activity Index (${band})`;
     },
     description: 'Where crops are actually grown today, blending climate, soil, terrain, and human factors.\nBright = active farmland. Dark = little or no crop production.',
     whoIsThisFor: 'Homesteaders, farmers, or anyone who values local food security and access to fresh produce.',
@@ -923,7 +926,7 @@ function loadFreeScores(): FreeScores | null {
   if (freeScoresCache) return freeScoresCache;
   if (freeScoresLoading) return null;
   freeScoresLoading = true;
-  fetch('/data/tiles/free/free_scores.json')
+  fetch(`${getTilesBase()}/free/free_scores.json`)
     .then(r => r.ok ? r.json() as Promise<FreeScores> : null)
     .then(d => { freeScoresCache = d; })
     .catch(() => {})

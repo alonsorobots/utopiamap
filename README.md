@@ -1,19 +1,29 @@
 # Utopia
 
-An interactive web map for discovering resilient and comfortable places to
-live, anywhere in the world. Combine real global datasets — climate, water,
-agriculture, population, GDP, air quality, and more — into a single composite
-map using interactive preference curves and an arithmetic formula bar.
+**Find places that fit how you actually feel about the world.**
 
 Live: [utopiamap.com](https://utopiamap.com)
 
-## What it does
+## What it is
 
-For every cell on Earth, Utopia stores a normalized value across roughly a
-dozen physical and human axes (temperature, precipitation, solar irradiance,
-elevation, etc.). You shape what each axis means to you with a Bezier curve,
-combine axes with simple arithmetic (`(t * w) / p`), scrub through historical
-years and future climate scenarios, and the heatmap updates instantly.
+Utopia is an interactive web map for thinking through where on Earth might
+suit you. It blends real global datasets — climate, water, agriculture,
+population, GDP, air quality, hazards, and more — into a single composite map
+that you shape with two unique controls:
+
+1. **A preference curve over each dataset.** For every axis you get a global
+   histogram and a flexible Bezier curve drawn over it. The curve is how you
+   express how you _feel_ about each possible value: comfortable, tolerable,
+   not for me. There's no "filter on/off" — you draw your taste, smoothly.
+2. **An arithmetic formula bar that combines the layers.** Use single-letter
+   aliases for each axis (`t`, `w`, `p`, …) and combine them with simple
+   operators: multiply to require both, divide to penalize, add to reward,
+   subtract to deduct. Example: `(t * w) / p` — warm and wet, lightly
+   populated.
+
+The interface isn't trying to perfectly model your ideal place — that's not
+really a thing. It's trying to let you pose the question well enough that you
+notice options you'd never have considered, and ask better questions next.
 
 There is no sign-up, no account. State persists locally and read-only
 permalinks encode the full session in the URL hash.
@@ -54,13 +64,20 @@ beyond the present and lets you switch between SSP scenarios:
 | [FAO GAEZ v5](https://gaez.fao.org) | Agriculture | Same SSPs | 2050, 2070 |
 | [SEDAC SSP Population Grids](https://doi.org/10.7927/q7z9-9r69) | Population | SSP1–SSP5 | 2020–2100 (10-year intervals) |
 
-## Features
+## How the controls work
 
-- **Interactive Bezier curves** over each axis's global histogram — express
-  preferences smoothly, not as filters.
-- **Arithmetic formula bar** combining axes by single-letter aliases (e.g.
-  `(t * w) / p` for warm, wet, low-population areas).
-- **Draw mask** — paint regions to include or exclude; works as `d` in formulas.
+- **Preference curves** — drag the curve over each histogram to express
+  comfort: high points = "I like this value," low points = "I don't." The
+  curve is a smooth Bezier, not a hard cutoff, so the resulting heatmap is a
+  gradient, not a binary mask.
+- **Formula bar** — type any arithmetic over single-letter aliases. Common
+  patterns:
+  - `t * w` — both warm and wet (multiplication is logical AND-ish).
+  - `t + w` — warm or wet (addition is OR-ish).
+  - `t / p` — warm divided by population (penalizes density).
+  - `(t * w * a) / r` — warm, wet, agriculturally suitable, far from cities.
+- **Draw mask** — paint regions to include or exclude. Works as `d` in
+  formulas, e.g. `t * d` clips temperature to your painted area.
 - **Time scrubber** — slide through historical years and switch between SSP
   futures.
 - **Read-only permalinks** — every session state (curves, formula, view, draw
@@ -81,7 +98,7 @@ backend.
 
 The heatmap is rendered as a custom WebGL layer on top of MapLibre GL JS;
 preference curves and arithmetic combination happen in a single fragment
-shader so the map updates instantly when curves change.
+shader, so the map updates instantly when curves change.
 
 ## Repo layout
 

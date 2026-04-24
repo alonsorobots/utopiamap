@@ -784,6 +784,36 @@ const AXES: Record<string, AxisConfig> = {
     infoWidth: 323,
     infoHeight: 183
   },
+  vista: {
+    label: 'Vista',
+    dataMin: 0,
+    dataMax: 1,
+    unit: 'view',
+    formatValue: (norm) => {
+      const score = Math.round(norm * 100);
+      return `${score}/100`;
+    },
+    formatHover: (norm) => {
+      const score = Math.round(norm * 100);
+      let band: string;
+      if (score < 5) band = 'Boxed in';
+      else if (score < 25) band = 'Limited view';
+      else if (score < 50) band = 'Open horizon';
+      else if (score < 75) band = 'Sweeping vista';
+      else band = 'Panoramic';
+      return `${score}/100 (${band})`;
+    },
+    description: 'How much of the surrounding landscape is visible from each spot. A "total viewshed" sums every line of sight reaching outward across rugged terrain, plains, and coasts.\nBright = sweeping panoramas. Dark = boxed in or no view at all (oceans).',
+    whoIsThisFor: 'House hunters who want a view, photographers chasing horizons, and anyone who values being able to see far.',
+    unitDescription: 'Score 0-100. Mountain ridgelines, sea cliffs, and high plateaus rank highest. Valley floors and dense forest interiors rank lowest. Computed from a global viewshed analysis at 100m resolution by alltheviews.world.',
+    source: 'alltheviews.world (Tom Buckley-Houston, Ryan Berger, Jaco Dart)',
+    sourceUrl: 'https://map.alltheviews.world/',
+    hoverLabel: 'Vista',
+    defaultCurve: LINEAR_UP,
+    staticYear: 2025,
+    infoWidth: 320,
+    infoHeight: 232
+  },
   travel: {
     label: 'Travel to City',
     dataMin: 0,
@@ -879,6 +909,7 @@ const HOTKEYS: Record<string, string> = {
   depv: 'x',
   hcare: 'h',
   travel: 'm',
+  vista: 'o',
   free: 'f',
   draw: 'd',
   e_consume: '1',

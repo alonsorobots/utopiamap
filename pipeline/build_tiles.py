@@ -2322,6 +2322,47 @@ def process_e_consume():
     return out
 
 
+def process_vista():
+    """alltheviews TVS (total viewshed surface) -> vista.pmtiles
+
+    Source raster lives at data/alltheviews/vista_raw.tif and is produced by
+    `python pipeline/download_alltheviews.py`, which fetches their global
+    z=6 tiles, decodes the per-tile float32+zlib payload, mosaics into a
+    single Web Mercator raster, and reprojects to EPSG:4326.
+
+    Values are relative TVS in km^2 visible from each cell. The distribution
+    is heavily right-tailed (oceans 0, plains low, mountain peaks 100s of
+    millions of units), so we log-transform and cap at the 99.5th percentile
+    of land cells. Resulting axis is bright = expansive views, dark = boxed
+    in or no view at all.
+    """
+    print("\n=== VISTA / TOTAL VIEWSHED (alltheviews.world) ===")
+    src = DATA / "alltheviews" / "vista_raw.tif"
+    if not src.exists():
+        print(f"  ERROR: {src} not found")
+        print("  Please run: python pipeline/download_alltheviews.py")
+        return None
+
+    with rasterio.open(src) as ds:
+        arr = ds.read(1)
+    finite = arr[np.isfinite(arr) & (arr > 0)]
+    if finite.size == 0:
+        print("  ERROR: no positive finite values in source")
+        return None
+    cap = float(np.percentile(finite, 99.5))
+    print(f"  source p50={np.percentile(finite,50):.0f}  p99={np.percentile(finite,99):.0f}"
+          f"  p99.5={cap:.0f}  max={finite.max():.0f}")
+
+    return full_pipeline(
+        src,
+        "vista",
+        data_min=0,
+        data_max=cap,
+        log_transform=True,
+        nodata_val=float("nan"),
+    )
+
+
 def process_travel():
     """Travel time to closest city -> travel.pmtiles"""
     print("\n=== TRAVEL TIME TO CITY (Weiss et al / Figshare) ===")
@@ -2383,6 +2424,7 @@ PROCESSORS = {
     "wind": process_wind,
     "e_consume": process_e_consume,
     "travel": process_travel,
+    "vista": process_vista,
 }
 
 for _aid, (_fuels, _label, _dmax) in FUEL_AXES.items():

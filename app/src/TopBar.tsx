@@ -153,7 +153,7 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
         <div className="share-privacy">
           {error
             ? `Error: ${error}`
-            : 'The link encodes your full session into the URL fragment. Nothing is uploaded to a server -- the data lives only in the link itself.'}
+            : 'No accounts, no tracking, no servers storing your data. Your whole session lives only in your browser and inside the link itself.'}
         </div>
       </div>
     </div>

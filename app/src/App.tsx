@@ -949,7 +949,21 @@ const ENERGY_SUB_OPTIONS: AxisOption[] = ENERGY_SUB_IDS.map((id) => {
   };
 });
 
-type FreeScores = Record<string, Record<string, { composite: number; fiw?: number; cpi?: number }>>;
+type FreeScores = Record<string, Record<string, {
+  composite: number;
+  fiw?: number;
+  cpi?: number;
+  cats?: Partial<Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', number>>;
+}>>;
+const FREE_CAT_LABELS: Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', string> = {
+  A: 'Electoral process',
+  B: 'Political pluralism',
+  C: 'Functioning government',
+  D: 'Expression & belief',
+  E: 'Associational rights',
+  F: 'Rule of law',
+  G: 'Personal autonomy',
+};
 
 let freeScoresCache: FreeScores | null = null;
 let freeScoresLoading = false;
@@ -1618,6 +1632,17 @@ export default function App() {
                   if (entry.fiw != null) parts.push(`FIW ${Math.round(entry.fiw)}`);
                   if (entry.cpi != null) parts.push(`CPI ${Math.round(entry.cpi)}`);
                   if (parts.length > 0) text += ` (${parts.join(', ')})`;
+                  if (entry.cats) {
+                    const order: (keyof typeof FREE_CAT_LABELS)[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+                    const lines = order
+                      .map(k => {
+                        const v = entry.cats?.[k];
+                        return v != null ? `\n${FREE_CAT_LABELS[k]} ${Math.round(v)}%` : '';
+                      })
+                      .filter(Boolean)
+                      .join('');
+                    if (lines) text += lines;
+                  }
                 }
               }
             }

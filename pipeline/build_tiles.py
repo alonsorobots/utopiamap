@@ -1232,6 +1232,61 @@ def _parse_fiw_historical() -> dict[int, dict[str, float]]:
     return result
 
 
+def _parse_fiw_subcategories() -> tuple[
+    dict[int, dict[str, dict[str, float]]],
+    dict[int, dict[str, float]],
+]:
+    """Parse FIW Aggregate Category and Subcategory Scores 2003-2024.
+    Returns (cats_by_year, total_by_year) where:
+      cats_by_year   = {review_year: {country: {category_key: pct_0_100}}}
+      total_by_year  = {review_year: {country: total_score_0_100}}
+
+    The 7 categories (each shown as % of max possible) are:
+      A  Electoral Process               (max 12)
+      B  Political Pluralism             (max 16)
+      C  Functioning of Government       (max 12)
+      D  Expression & Belief             (max 16)
+      E  Associational Rights            (max 12)
+      F  Rule of Law                     (max 16)
+      G  Personal Autonomy               (max 16)
+    Edition year reviews the prior calendar year (FIW2024 -> 2023).
+    """
+    import pandas as pd
+
+    path = DATA / "FreedomHouse" / "Aggregate_Category_and_Subcategory_Scores_FIW_2003-2024.xlsx"
+    if not path.exists():
+        return {}, {}
+
+    cat_max = {"A": 12, "B": 16, "C": 12, "D": 16, "E": 12, "F": 16, "G": 16}
+    df = pd.read_excel(path, sheet_name="FIW06-24")
+    cats_result: dict[int, dict[str, dict[str, float]]] = {}
+    total_result: dict[int, dict[str, float]] = {}
+    for _, row in df.iterrows():
+        country = row.get("Country/Territory")
+        edition = row.get("Edition")
+        if pd.isna(country) or pd.isna(edition):
+            continue
+        review_year = int(edition) - 1
+        cname = str(country).strip()
+        cats: dict[str, float] = {}
+        for k, m in cat_max.items():
+            v = row.get(k)
+            if pd.notna(v):
+                try:
+                    cats[k] = round(float(v) / m * 100, 1)
+                except (ValueError, TypeError):
+                    pass
+        if cats:
+            cats_result.setdefault(review_year, {})[cname] = cats
+        total = row.get("Total")
+        if pd.notna(total):
+            try:
+                total_result.setdefault(review_year, {})[cname] = round(float(total), 1)
+            except (ValueError, TypeError):
+                pass
+    return cats_result, total_result
+
+
 def _parse_cpi_historical() -> dict[int, dict[str, float]]:
     """Parse CPI/global-cpi-all.csv. Returns {year: {country_name: score_0_100}}."""
     import csv
@@ -1264,6 +1319,7 @@ def process_free():
         return None
 
     fiw_by_year = _parse_fiw_historical()
+    fiw_cats_by_year, _fiw_total_by_year = _parse_fiw_subcategories()
     cpi_by_year = _parse_cpi_historical()
 
     if not fiw_by_year and not cpi_by_year:
@@ -1273,6 +1329,10 @@ def process_free():
     print(f"  FIW: {min(fiw_by_year) if fiw_by_year else 'N/A'}-"
           f"{max(fiw_by_year) if fiw_by_year else 'N/A'} "
           f"({len(fiw_by_year)} years)")
+    print(f"  FIW subcategories: "
+          f"{min(fiw_cats_by_year) if fiw_cats_by_year else 'N/A'}-"
+          f"{max(fiw_cats_by_year) if fiw_cats_by_year else 'N/A'} "
+          f"({len(fiw_cats_by_year)} years)")
     print(f"  CPI: {min(cpi_by_year) if cpi_by_year else 'N/A'}-"
           f"{max(cpi_by_year) if cpi_by_year else 'N/A'} "
           f"({len(cpi_by_year)} years)")
@@ -1308,7 +1368,19 @@ def process_free():
                 entry["fiw"] = round(fiw_val, 1)
             if cpi_val is not None:
                 entry["cpi"] = round(cpi_val, 1)
+            cats = fiw_cats_by_year.get(year, {}).get(country)
+            if cats:
+                entry["cats"] = cats
             year_scores[country] = entry
+
+        # Some sources name countries differently (CPI uses "United States
+        # of America", FIW subcategory file uses "United States"). Add
+        # subcategory-only entries so the post-processing alias merge can
+        # fold them onto the canonical geo name and attach `cats` to the
+        # composite/cpi entry.
+        for country, cats in fiw_cats_by_year.get(year, {}).items():
+            if country not in year_scores:
+                year_scores[country] = {"cats": cats}
 
         scores_by_year[str(year)] = year_scores
 

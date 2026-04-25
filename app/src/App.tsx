@@ -160,15 +160,15 @@ const AXES: Record<string, AxisConfig> = {
   temp: {
     label: 'Temperature',
     dataMin: -30,
-    dataMax: 35,
+    dataMax: 45,
     unit: 'F',
     formatValue: (norm, unit) => {
-      const c = -30 + norm * 65;
+      const c = -30 + norm * 75;
       if (unit === 'F') return `${Math.round(c * 9 / 5 + 32)}F`;
       return `${Math.round(c)}C`;
     },
     formatHover: (norm, unit) => {
-      const c = -30 + norm * 65;
+      const c = -30 + norm * 75;
       const v = unit === 'F' ? `${Math.round(c * 9 / 5 + 32)}F` : `${Math.round(c)}C`;
       let band: string;
       if (c < -5) band = 'Frigid';
@@ -186,14 +186,11 @@ const AXES: Record<string, AxisConfig> = {
     source: 'TerraClimate (University of Idaho)',
     sourceUrl: 'https://www.climatologylab.org/terraclimate.html',
     hoverLabel: 'Avg temp',
-    // Curve x values are normalized to (dataMin, dataMax) = (-30, 35).
-    // These four points correspond to actual temps of 5C, 15C, 25C, 35C
-    // (a "comfortable mild" band peaking at 5C and 35C with a dip in between).
     defaultCurve: [
-      { x: 35 / 65, y: 1 },
-      { x: 45 / 65, y: 0 },
-      { x: 55 / 65, y: 0 },
-      { x: 65 / 65, y: 1 },
+      { x: 0.467, y: 1 },
+      { x: 0.6,   y: 0 },
+      { x: 0.733, y: 0 },
+      { x: 0.867, y: 1 },
     ],
     infoWidth: 304,
     infoHeight: 167

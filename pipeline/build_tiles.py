@@ -207,6 +207,41 @@ def build_water_mask(
     return mask
 
 
+def apply_water_mask(src_tif: Path, dst_tif: Path, nodata_val=np.nan) -> Path:
+    """Like apply_ocean_mask, but also masks large inland water bodies
+    (Great Lakes, Caspian, Baikal, Victoria, ...). Uses the cached
+    water mask from build_water_mask. Falls back to apply_ocean_mask
+    if the water mask can't be built (e.g. ETOPO missing).
+    """
+    print("  Applying water mask (oceans + large lakes)...")
+    with rasterio.open(src_tif) as src_ds:
+        data = src_ds.read(1)
+        profile = src_ds.profile.copy()
+
+    water_mask = build_water_mask(src_tif)
+    if water_mask is None:
+        print("    Water mask unavailable, falling back to ocean-only mask")
+        return apply_ocean_mask(src_tif, dst_tif, nodata_val=nodata_val)
+
+    if isinstance(nodata_val, float) and np.isnan(nodata_val):
+        data = data.astype(np.float32)
+        data[water_mask] = np.nan
+    else:
+        data[water_mask] = nodata_val
+    pct = 100 * water_mask.sum() / water_mask.size
+    print(f"    Masked {pct:.1f}% water pixels (oceans + large lakes)")
+
+    profile.update(
+        nodata=float(nodata_val)
+        if not (isinstance(nodata_val, float) and np.isnan(nodata_val))
+        else float("nan")
+    )
+    ensure_dir(dst_tif.parent)
+    with rasterio.open(dst_tif, "w", **profile) as dst:
+        dst.write(data, 1)
+    return dst_tif
+
+
 def apply_ocean_mask(src_tif: Path, dst_tif: Path, nodata_val=np.nan) -> Path:
     """Mask out ocean pixels using ETOPO elevation data (elevation <= 0 = ocean).
     Returns dst_tif path, or src_tif if ETOPO not available.
@@ -434,7 +469,10 @@ def process_hcare():
 
     masked_path = TILES / "hcare" / "hcare_masked.tif"
     ensure_dir(masked_path.parent)
-    final_tif = apply_ocean_mask(tif, masked_path, nodata_val=-1)
+    # Mask out large inland lakes too (Great Lakes, Caspian, etc.) so
+    # the "travel time to healthcare" raster isn't painting bogus
+    # values across water surfaces.
+    final_tif = apply_water_mask(tif, masked_path, nodata_val=-1)
 
     out = full_pipeline(final_tif, "hcare", data_min=0, data_max=180, invert=True, nodata_val=-1)
     if final_tif != tif:

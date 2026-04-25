@@ -29,6 +29,10 @@ function formatDragValue(value: number): string {
 
 export function FormulaBar({ formula, onFormulaChange, placeholder, error, onSelectionChange }: FormulaBarProps) {
   const [editing, setEditing] = useState(false);
+  // Token start offset of the identifier currently being previewed via
+  // hover. Using start (not text) so duplicates like `temp + temp` only
+  // highlight the one under the cursor.
+  const [hoveredIdentStart, setHoveredIdentStart] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const displayRef = useRef<HTMLDivElement>(null);
   const formulaRef = useRef(formula);
@@ -51,8 +55,24 @@ export function FormulaBar({ formula, onFormulaChange, placeholder, error, onSel
 
   const enterEdit = useCallback(() => {
     if (dragRef.current) return;
+    // Clear any active hover-preview before swapping to the input so
+    // the parent doesn't keep showing a soloed sub-formula.
+    if (hoveredIdentStart !== null) {
+      setHoveredIdentStart(null);
+      onSelectionChange?.(null);
+    }
     setEditing(true);
-  }, []);
+  }, [hoveredIdentStart, onSelectionChange]);
+
+  const onIdentEnter = useCallback((tok: Token) => {
+    setHoveredIdentStart(tok.start);
+    onSelectionChange?.(tok.text);
+  }, [onSelectionChange]);
+
+  const onIdentLeave = useCallback(() => {
+    setHoveredIdentStart(null);
+    onSelectionChange?.(null);
+  }, [onSelectionChange]);
 
   const exitEdit = useCallback(() => {
     setEditing(false);
@@ -172,7 +192,17 @@ export function FormulaBar({ formula, onFormulaChange, placeholder, error, onSel
           );
         }
         if (tok.type === 'ident') {
-          return <span key={`${i}-${tok.start}`} className="formula-token-ident">{tok.text}</span>;
+          const isHovered = hoveredIdentStart === tok.start;
+          return (
+            <span
+              key={`${i}-${tok.start}`}
+              className={isHovered ? 'formula-token-ident formula-token-ident-hover' : 'formula-token-ident'}
+              onMouseEnter={() => onIdentEnter(tok)}
+              onMouseLeave={onIdentLeave}
+            >
+              {tok.text}
+            </span>
+          );
         }
         if (tok.type === 'op' || tok.type === 'paren') {
           return <span key={`${i}-${tok.start}`} className="formula-token-op">{tok.text}</span>;

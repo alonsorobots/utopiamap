@@ -146,6 +146,21 @@
 
 .formula-token-ident {
   color: #e0e0e0;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: 0 1px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+/* Mouse-over an axis identifier in the formula bar previews that axis
+ * solo on the map (driven by FormulaBar's onSelectionChange). The
+ * highlight tells the user which token the map is currently showing. */
+.formula-token-ident-hover {
+  color: #fff;
+  background: rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.45);
 }
 
 .formula-token-op {

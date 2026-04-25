@@ -203,11 +203,16 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
     return () => window.removeEventListener('pointerdown', close);
   }, [saveMenuOpen]);
 
-  const onMenuItemEnter = useCallback((a: AxisOption) => {
+  const onMenuItemEnter = useCallback((a: AxisOption, isSubmenuItem = false) => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => setHoveredAxis(a), 500);
-    if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
-    setSubMenuOpen(false);
+    // Only top-level items should collapse the submenu when the mouse moves
+    // away from "more...". When the user actually hovers a submenu item we
+    // want it to stay open (otherwise it dismisses itself on entry).
+    if (!isSubmenuItem) {
+      if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
+      setSubMenuOpen(false);
+    }
   }, []);
 
   const onMenuItemLeave = useCallback(() => {
@@ -268,7 +273,7 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
                           key={a.id}
                           className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
                           onClick={() => { onAxisChange(a.id); setMenuOpen(false); setSubMenuOpen(false); }}
-                          onMouseEnter={() => onMenuItemEnter(a)}
+                          onMouseEnter={() => onMenuItemEnter(a, true)}
                           onMouseLeave={onMenuItemLeave}
                         >
                           <span>{a.label}</span>

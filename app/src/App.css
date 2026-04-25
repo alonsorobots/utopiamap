@@ -255,12 +255,22 @@
   cursor: default;
 }
 
-.axis-submenu {
+/* Higher specificity (`.axis-menu.axis-submenu`) so these positioning
+ * rules always win over `.axis-menu` regardless of source order. The
+ * submenu anchors its BOTTOM to the wrapper's bottom so it opens
+ * upward from the bottom of the main dropdown -- this keeps tall
+ * submenus from spilling off the bottom of the viewport. The 6px
+ * padding-left keeps the hit area continuous with the main menu so
+ * the mouse can travel across without triggering mouseleave. */
+.axis-menu.axis-submenu {
   position: absolute;
-  top: -4px;
+  top: auto;
+  bottom: 0;
   left: 100%;
   padding-left: 6px;
   z-index: 1001;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
 }
 
 /* ── Save / Load Menu ──────────────────────────────────────────────── */

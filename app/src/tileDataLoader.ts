@@ -242,6 +242,49 @@ async function fetchWithOverzoom(
   tileEpoch.set(key, cacheEpoch);
 }
 
+// PNG decoding helpers. Two Firefox-specific gotchas bit us here:
+//
+//   1. createImageBitmap() defaults `colorSpaceConversion: 'default'` which on
+//      Firefox actually applies sRGB color management. Our PMTiles encode raw
+//      0-255 quantized data values into the R channel of the PNG, so any
+//      gamma transform silently corrupts the sample values. We pin the
+//      options to 'none' to read the raw bytes.
+//   2. OffscreenCanvas 2D was unavailable in some Firefox configurations
+//      (e.g. private windows, hardware accel disabled). We probe once and
+//      fall back to a regular <canvas> off the document if needed.
+
+const BITMAP_OPTS: ImageBitmapOptions = {
+  colorSpaceConversion: 'none',
+  premultiplyAlpha: 'none',
+};
+
+type Canvas2D = OffscreenCanvas | HTMLCanvasElement;
+
+let _useOffscreen: boolean | null = null;
+
+function makeCanvas(w: number, h: number): { canvas: Canvas2D; ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D } | null {
+  if (_useOffscreen !== false && typeof OffscreenCanvas !== 'undefined') {
+    try {
+      const c = new OffscreenCanvas(w, h);
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        _useOffscreen = true;
+        return { canvas: c, ctx };
+      }
+    } catch {
+      // fall through
+    }
+    _useOffscreen = false;
+  }
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  return { canvas: c, ctx };
+}
+
 async function decodeAndCropTile(
   data: ArrayBuffer,
   dz: number,
@@ -250,16 +293,16 @@ async function decodeAndCropTile(
 ): Promise<Uint8Array | null> {
   try {
     const blob = new Blob([data], { type: 'image/png' });
-    const bitmap = await createImageBitmap(blob);
+    const bitmap = await createImageBitmap(blob, BITMAP_OPTS);
 
     const divisor = 1 << dz;
     const localX = childX & (divisor - 1);
     const localY = childY & (divisor - 1);
     const srcSize = bitmap.width / divisor;
 
-    const canvas = new OffscreenCanvas(TILE_PX, TILE_PX);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
+    const made = makeCanvas(TILE_PX, TILE_PX);
+    if (!made) return null;
+    const { ctx } = made;
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'medium';
@@ -301,11 +344,11 @@ function cleanNodataFringe(pixels: Uint8Array) {
 async function decodePngToRGBA(data: ArrayBuffer): Promise<Uint8Array | null> {
   try {
     const blob = new Blob([data], { type: 'image/png' });
-    const bitmap = await createImageBitmap(blob);
+    const bitmap = await createImageBitmap(blob, BITMAP_OPTS);
 
-    const canvas = new OffscreenCanvas(TILE_PX, TILE_PX);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
+    const made = makeCanvas(TILE_PX, TILE_PX);
+    if (!made) return null;
+    const { ctx } = made;
     ctx.drawImage(bitmap, 0, 0, TILE_PX, TILE_PX);
     const imgData = ctx.getImageData(0, 0, TILE_PX, TILE_PX);
     const result = new Uint8Array(imgData.data.buffer);

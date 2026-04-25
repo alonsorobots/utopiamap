@@ -18,7 +18,7 @@ import {
   importPaintedMask,
 } from './heatmapLayer';
 import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getCatalog, getTilesBase } from './tileDataLoader';
-import { tokenize as tokenizeFormula } from './formulaParser';
+import { tokenize as tokenizeFormula, resolveAxisAlias } from './formulaParser';
 import type { FormulaError, PaintedMask } from './heatmapLayer';
 import { CurveEditor } from './CurveEditor';
 import type { AxisConfig, CurvePoint } from './CurveEditor';
@@ -1333,6 +1333,18 @@ export default function App() {
     mapRef.current?.triggerRepaint();
   }, []);
 
+  // Double-click an axis identifier in the formula bar -> switch the
+  // active axis so the curve editor lets the user tune that axis. The
+  // formula itself is left alone (handleAxisChange already only
+  // rewrites it for single-ident formulas), so e.g. double-clicking
+  // "water" in "temp + water" just swaps the graph panel to water
+  // while the map keeps showing the full formula.
+  const handleFormulaIdentDoubleClick = useCallback((text: string) => {
+    const axisId = resolveAxisAlias(text);
+    if (!AXES[axisId]) return;
+    handleAxisChange(axisId);
+  }, [handleAxisChange]);
+
   const handleFormulaSelectionChange = useCallback((sel: string | null) => {
     if (sel && sel.trim().length > 0) {
       setHeatmapFormula(sel);
@@ -1765,6 +1777,7 @@ export default function App() {
         formula={formula}
         onFormulaChange={handleFormulaChange}
         onFormulaSelectionChange={handleFormulaSelectionChange}
+        onFormulaIdentDoubleClick={handleFormulaIdentDoubleClick}
         formulaError={formulaError}
         repoUrl={REPO_URL}
         onSaveFile={handleSaveFile}

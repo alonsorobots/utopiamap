@@ -19,6 +19,7 @@ interface TopBarProps {
   formula: string;
   onFormulaChange: (f: string) => void;
   onFormulaSelectionChange?: (sel: string | null) => void;
+  onFormulaIdentDoubleClick?: (text: string) => void;
   formulaError?: string | null;
   repoUrl: string;
   onSaveFile?: () => void;
@@ -162,7 +163,7 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
 
 // ── TopBar ───────────────────────────────────────────────────────────
 
-export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, formulaError, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
+export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
@@ -296,6 +297,7 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
             formula={formula}
             onFormulaChange={onFormulaChange}
             onSelectionChange={onFormulaSelectionChange}
+            onIdentDoubleClick={onFormulaIdentDoubleClick}
             placeholder="e.g. (temp * water) / pop"
             error={formulaError}
           />

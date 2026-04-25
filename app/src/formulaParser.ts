@@ -54,6 +54,13 @@ const ALIASES: Record<string, string> = {
   i: 'inet', x: 'depv', h: 'hcare', m: 'travel', o: 'vista', f: 'free',
 };
 
+// Resolve a raw identifier (case-insensitive) into its canonical axis
+// name. "T" -> "temp", "Temp" -> "temp", "water" -> "water".
+export function resolveAxisAlias(text: string): string {
+  const lower = text.toLowerCase();
+  return ALIASES[lower] ?? lower;
+}
+
 // ── Recursive descent parser ─────────────────────────────────────────
 //
 // Grammar:

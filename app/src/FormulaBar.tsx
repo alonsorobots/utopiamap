@@ -17,6 +17,11 @@ interface FormulaBarProps {
   placeholder?: string;
   error?: string | null;
   onSelectionChange?: (sel: string | null) => void;
+  /** Double-click on an axis identifier in the display -> parent
+   *  switches the active axis (so the curve editor lets the user tune
+   *  it). Receives the raw identifier text; the parent is responsible
+   *  for resolving aliases. */
+  onIdentDoubleClick?: (text: string) => void;
 }
 
 function formatDragValue(value: number): string {
@@ -27,7 +32,7 @@ function formatDragValue(value: number): string {
   return value.toFixed(2);
 }
 
-export function FormulaBar({ formula, onFormulaChange, placeholder, error, onSelectionChange }: FormulaBarProps) {
+export function FormulaBar({ formula, onFormulaChange, placeholder, error, onSelectionChange, onIdentDoubleClick }: FormulaBarProps) {
   const [editing, setEditing] = useState(false);
   // Token start offset of the identifier currently being previewed via
   // hover. Using start (not text) so duplicates like `temp + temp` only
@@ -197,8 +202,19 @@ export function FormulaBar({ formula, onFormulaChange, placeholder, error, onSel
             <span
               key={`${i}-${tok.start}`}
               className={isHovered ? 'formula-token-ident formula-token-ident-hover' : 'formula-token-ident'}
+              title="Double-click to tune this axis"
               onMouseEnter={() => onIdentEnter(tok)}
               onMouseLeave={onIdentLeave}
+              // Swallow single-clicks so the parent's onClick (enter
+              // edit mode) doesn't fire and unmount this span before
+              // the dblclick can land. Edit mode is still entered by
+              // clicking anywhere else on the bar.
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onIdentDoubleClick?.(tok.text);
+              }}
             >
               {tok.text}
             </span>

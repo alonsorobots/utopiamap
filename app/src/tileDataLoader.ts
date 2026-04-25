@@ -59,10 +59,21 @@ export async function loadCatalog(): Promise<Catalog | null> {
   if (catalog) return catalog;
   if (catalogPromise) return catalogPromise;
 
+  console.info(`[utopia] loadCatalog ${TILES_BASE}/catalog.json`);
   catalogPromise = fetch(`${TILES_BASE}/catalog.json`)
-    .then((r) => r.ok ? r.json() as Promise<Catalog> : null)
-    .then((c) => { catalog = c; return c; })
-    .catch(() => null);
+    .then((r) => {
+      console.info(`[utopia] catalog HTTP ${r.status}`);
+      return r.ok ? r.json() as Promise<Catalog> : null;
+    })
+    .then((c) => {
+      catalog = c;
+      console.info(`[utopia] catalog axes=${c ? Object.keys(c).length : 'null'}`);
+      return c;
+    })
+    .catch((err) => {
+      console.error(`[utopia] catalog fetch failed`, err);
+      return null;
+    });
 
   return catalogPromise;
 }
@@ -216,6 +227,9 @@ export function fetchTileData(
   }
 
   pendingFetches.add(key);
+  if (pendingFetches.size <= 4) {
+    console.info(`[utopia] fetchTileData ${axis}/${z}/${wrappedX}/${y} -> ${url.replace(TILES_BASE, '')}`);
+  }
   fetchWithOverzoom(getArchive(url), axis, z, wrappedX, y, key);
 }
 

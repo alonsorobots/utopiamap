@@ -76,8 +76,17 @@
   background: rgba(255,255,255,0.06);
 }
 
-.formula-input-error {
-  border-color: rgba(239, 68, 68, 0.5);
+.formula-input-error,
+.formula-input-error:focus,
+.formula-input-error:hover {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.10);
+  color: #fca5a5;
+  caret-color: #fca5a5;
+}
+
+.formula-input-error::placeholder {
+  color: rgba(252, 165, 165, 0.6);
 }
 
 /* ── Formula Display (interactive token view) ─────────────────────── */

@@ -108,6 +108,105 @@ def normalize_to_uint8(
     print(f"  Normalized -> {dst_path.name} ({out.shape[1]}x{out.shape[0]})")
 
 
+def build_water_mask(
+    template_tif: Path,
+    min_lake_area_km2: float = 100.0,
+    cache_dir: Path | None = None,
+) -> np.ndarray | None:
+    """Build a boolean (True = water) mask matching the grid of `template_tif`.
+
+    Combines:
+      1. ETOPO elevation <= 0  -> oceans / seas
+      2. Natural Earth ne_10m_lakes filtered by area  -> large inland water bodies
+         (Great Lakes, Caspian, Baikal, Victoria, ...).
+
+    Returned mask is cached to `cache_dir` keyed on grid shape so subsequent
+    axes (e.g. future "visible water") can reuse it without recomputing.
+    Returns None if ETOPO is missing.
+    """
+    elev_src = DATA / "ETOPO" / "ETOPO_2022_v1_60s_N90W180_surface.tif"
+    if not elev_src.exists():
+        print("  WARNING: No ETOPO elevation data available; skipping water mask")
+        return None
+
+    cache_dir = cache_dir or (DATA / "water_mask")
+    ensure_dir(cache_dir)
+
+    with rasterio.open(template_tif) as ds:
+        bounds = ds.bounds
+        shape = (ds.height, ds.width)
+        crs = ds.crs
+
+    cache_path = cache_dir / f"water_mask_{shape[1]}x{shape[0]}.tif"
+    if cache_path.exists():
+        with rasterio.open(cache_path) as ds:
+            return ds.read(1).astype(bool)
+
+    print(f"  Building water mask {shape[1]}x{shape[0]} -> {cache_path.name}")
+    from rasterio.warp import reproject, Resampling as WarpResampling
+    from rasterio.transform import from_bounds as fb
+    from rasterio.features import rasterize as rio_rasterize
+
+    grid_transform = fb(bounds.left, bounds.bottom, bounds.right, bounds.top, shape[1], shape[0])
+
+    print("    Reprojecting ETOPO to grid...")
+    with rasterio.open(elev_src) as elev_ds:
+        elev_resampled = np.empty(shape, dtype=np.float32)
+        reproject(
+            source=rasterio.band(elev_ds, 1),
+            destination=elev_resampled,
+            dst_transform=grid_transform,
+            dst_crs=crs,
+            resampling=WarpResampling.bilinear,
+        )
+    mask = elev_resampled <= 0
+    print(f"    Ocean cells: {100 * mask.mean():.1f}%")
+
+    lakes_shp = DATA / "NaturalEarth" / "ne_10m_lakes" / "ne_10m_lakes.shp"
+    if lakes_shp.exists():
+        try:
+            import geopandas as gpd
+            print(f"    Adding lakes >= {min_lake_area_km2:.0f} km^2 from Natural Earth...")
+            gdf = gpd.read_file(lakes_shp)
+            # ne_10m_lakes carries area_km2 in 'scalerank' / 'admin' depending on
+            # version; compute from EPSG:6933 (equal area) to be safe.
+            try:
+                eq = gdf.to_crs(epsg=6933)
+                gdf["_area_km2"] = eq.geometry.area / 1e6
+            except Exception:
+                gdf["_area_km2"] = gdf.geometry.area * 12365.0  # rough deg^2->km^2
+            big_lakes = gdf[gdf["_area_km2"] >= min_lake_area_km2]
+            print(f"    {len(big_lakes)} large lakes / {len(gdf)} total")
+            shapes = [(geom, 1) for geom in big_lakes.geometry if geom is not None]
+            if shapes:
+                lake_raster = rio_rasterize(
+                    shapes, out_shape=shape, transform=grid_transform,
+                    fill=0, dtype=np.uint8,
+                )
+                mask = mask | (lake_raster == 1)
+                print(f"    Total water cells after lakes: {100 * mask.mean():.1f}%")
+        except ImportError:
+            print("    WARNING: geopandas missing; lakes not added to water mask")
+    else:
+        print(f"    No lakes shapefile at {lakes_shp}; oceans only")
+
+    profile = {
+        "driver": "GTiff",
+        "dtype": "uint8",
+        "width": shape[1],
+        "height": shape[0],
+        "count": 1,
+        "crs": crs,
+        "transform": grid_transform,
+        "nodata": 255,
+        "compress": "deflate",
+        "tiled": True,
+    }
+    with rasterio.open(cache_path, "w", **profile) as dst:
+        dst.write(mask.astype(np.uint8), 1)
+    return mask
+
+
 def apply_ocean_mask(src_tif: Path, dst_tif: Path, nodata_val=np.nan) -> Path:
     """Mask out ocean pixels using ETOPO elevation data (elevation <= 0 = ocean).
     Returns dst_tif path, or src_tif if ETOPO not available.
@@ -2343,24 +2442,47 @@ def process_vista():
         print("  Please run: python pipeline/download_alltheviews.py")
         return None
 
+    # Build a land mask: oceans + large lakes. Without this, the open ocean
+    # (which alltheviews assigns a near-uniform ~700k baseline visibility) sits
+    # right in the middle of the log-normalized ramp and creates the visible
+    # source-tile blocks the user reported.
+    print("  Loading raw vista raster...")
     with rasterio.open(src) as ds:
-        arr = ds.read(1)
+        arr = ds.read(1).astype(np.float32)
+        profile = ds.profile.copy()
+
+    water_mask = build_water_mask(src)
+    masked_path = TILES / "vista" / "vista_land.tif"
+    ensure_dir(masked_path.parent)
+    if water_mask is not None:
+        before = np.isfinite(arr).sum()
+        arr[water_mask] = np.nan
+        after = np.isfinite(arr).sum()
+        print(f"  Masked water cells: {before - after:,} pixels removed "
+              f"({100 * (before - after) / max(before, 1):.1f}%)")
+
+    profile.update(dtype="float32", nodata=float("nan"), compress="deflate", tiled=True)
+    with rasterio.open(masked_path, "w", **profile) as dst:
+        dst.write(arr, 1)
+
     finite = arr[np.isfinite(arr) & (arr > 0)]
     if finite.size == 0:
-        print("  ERROR: no positive finite values in source")
+        print("  ERROR: no positive finite values in land cells")
         return None
     cap = float(np.percentile(finite, 99.5))
-    print(f"  source p50={np.percentile(finite,50):.0f}  p99={np.percentile(finite,99):.0f}"
+    print(f"  land p50={np.percentile(finite,50):.0f}  p99={np.percentile(finite,99):.0f}"
           f"  p99.5={cap:.0f}  max={finite.max():.0f}")
 
-    return full_pipeline(
-        src,
+    out = full_pipeline(
+        masked_path,
         "vista",
         data_min=0,
         data_max=cap,
         log_transform=True,
         nodata_val=float("nan"),
     )
+    masked_path.unlink(missing_ok=True)
+    return out
 
 
 def process_travel():

@@ -42,10 +42,16 @@ export function tokenize(input: string): Token[] {
 
 // ── Axis aliases ─────────────────────────────────────────────────────
 
+// Single-letter aliases for axes. Keep these in sync with HOTKEYS in
+// App.tsx so any axis hotkey also works as a formula identifier
+// (e.g. pressing "i" switches to internet AND typing "i" in the
+// formula bar resolves to the inet axis). Lookup is case-insensitive
+// because identifier text is lowercased before this table is queried.
 const ALIASES: Record<string, string> = {
   t: 'temp', v: 'tvar', w: 'water', s: 'solar', n: 'wind',
   e: 'energy', a: 'agri', z: 'agrip', p: 'pop', g: 'gdp', c: 'cost',
   q: 'air', l: 'elev', k: 'risk', d: 'draw',
+  i: 'inet', x: 'depv', h: 'hcare', m: 'travel', o: 'vista', f: 'free',
 };
 
 // ── Recursive descent parser ─────────────────────────────────────────

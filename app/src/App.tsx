@@ -161,7 +161,7 @@ const AXES: Record<string, AxisConfig> = {
     label: 'Temperature',
     dataMin: -30,
     dataMax: 45,
-    unit: 'C',
+    unit: 'F',
     formatValue: (norm, unit) => {
       const c = -30 + norm * 75;
       if (unit === 'F') return `${Math.round(c * 9 / 5 + 32)}F`;
@@ -199,7 +199,7 @@ const AXES: Record<string, AxisConfig> = {
     label: 'Temp Volatility',
     dataMin: 0,
     dataMax: 15,
-    unit: 'C',
+    unit: 'F',
     formatValue: (norm, unit) => {
       const c = norm * 15;
       if (unit === 'F') return `${(c * 9 / 5).toFixed(1)}F std`;
@@ -1464,7 +1464,11 @@ export default function App() {
           text = `${label}: (Country Avg)`; // Overwritten by country polygon hit-test
         } else {
           const fmt = ax.formatHover ?? ax.formatValue;
-          text = `${label}: ${fmt(hv.rawNorm, ax.unit)}`;
+          // Use the user-selected unit (e.g. C/F toggle on temp), falling
+          // back to the axis default. Without this lookup the hover label
+          // always rendered in the axis's static default unit.
+          const userUnit = unitStatesRef.current[axId] ?? ax.unit;
+          text = `${label}: ${fmt(hv.rawNorm, userUnit)}`;
         }
       } else {
         text = `${Math.round(hv.rawNorm * 100)}%`;

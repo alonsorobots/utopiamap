@@ -803,16 +803,16 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Panoramic';
       return `${score}/100 (${band})`;
     },
-    description: 'How much of the surrounding landscape is visible from each spot. A "total viewshed" sums every line of sight reaching outward across rugged terrain, plains, and coasts.\nBright = sweeping panoramas. Dark = boxed in or no view at all (oceans).',
-    whoIsThisFor: 'House hunters who want a view, photographers chasing horizons, and anyone who values being able to see far.',
-    unitDescription: 'Score 0-100. Mountain ridgelines, sea cliffs, and high plateaus rank highest. Valley floors and dense forest interiors rank lowest. Computed from a global viewshed analysis at 100m resolution by alltheviews.world.',
-    source: 'alltheviews.world (Tom Buckley-Houston, Ryan Berger, Jaco Dart)',
+    description: 'How much of the surrounding landscape is visible from each spot.\nBright = sweeping panoramas. Dark = boxed in or no view at all.',
+    whoIsThisFor: 'House hunters chasing a view, photographers, and anyone who values being able to see far.',
+    unitDescription: 'Score 0-100 from a global viewshed analysis. Mountain ridgelines, sea cliffs, and high plateaus rank highest. Valley floors and dense forest interiors rank lowest.',
+    source: 'alltheviews.world (Buckley-Houston, Berger, Dart)',
     sourceUrl: 'https://map.alltheviews.world/',
     hoverLabel: 'Vista',
     defaultCurve: LINEAR_UP,
     staticYear: 2025,
     infoWidth: 320,
-    infoHeight: 232
+    infoHeight: 195
   },
   travel: {
     label: 'Travel to City',

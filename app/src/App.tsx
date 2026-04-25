@@ -760,25 +760,25 @@ const AXES: Record<string, AxisConfig> = {
     dataMin: 0,
     dataMax: 200,                    // deaths per million per year, capped for color
     unit: '/M/yr',
-    formatValue: (norm) => `${(norm * 200).toFixed(0)} deaths per million per year`,
+    formatValue: (norm) => `${fmtOddsPerYear(norm * 200)}`,
     formatHover: (norm, _u, lat, lng) => {
       void loadRiskLookup();
       const cell = (lat !== undefined && lng !== undefined) ? riskCellAt(lat, lng) : null;
       const total = cell ? cell.composite : norm * 200;
       const headline = total > 0
-        ? `${fmtMortality(total)} deaths per million per year  (${fmtOddsPerYear(total)})`
-        : `${fmtMortality(total)} deaths per million per year`;
+        ? `${fmtOddsPerYear(total)}  (${fmtMortality(total)} deaths per million per year)`
+        : '~0 chance per year';
       if (!cell) return headline;
       const lines = cell.hazards
         .filter(h => h.rate >= 0.05)
         .sort((a, b) => b.rate - a.rate)
-        .map(h => `  ${(HAZARD_LABELS[h.id] || h.id).padEnd(11)} ${fmtMortality(h.rate)}`);
+        .map(h => `  ${(HAZARD_LABELS[h.id] || h.id).padEnd(11)} ${fmtOddsPerYear(h.rate)}`);
       if (!lines.length) return headline;
       return [headline, ...lines].join('\n');
     },
-    description: 'Annual chance of dying from a natural disaster.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
+    description: 'Chance of dying from a natural disaster here.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
     whoIsThisFor: 'Homebuyers and anyone weighing earthquake, flood, cyclone, tsunami, volcanic, drought, wildfire, and landslide exposure.',
-    unitDescription: 'Deaths per million people per year. Reference: traffic ~120, heart disease ~2,000, all causes ~8,000 deaths per million per year.',
+    unitDescription: 'Annual probability of death, expressed as "1 in N per year". Also shown in deaths per million people per year for comparison. Reference: car crashes ~120, heart disease ~2,000, all causes ~8,000 deaths per million per year.',
     source: 'See sources panel',
     sources: [
       { name: 'EM-DAT (mortality, 1980-2020)', url: 'https://public.emdat.be/' },
@@ -1000,7 +1000,7 @@ const AXES: Record<string, AxisConfig> = {
           const band = h.band(intensity);
           const head = `${native} (${band})`;
           if (mortality != null && mortality >= 0.05) {
-            return `${head}\n  ${fmtMortality(mortality)} deaths per million per year  (${fmtOddsPerYear(mortality)})`;
+            return `${head}\n  ${fmtOddsPerYear(mortality)}  (${fmtMortality(mortality)} deaths per million per year)`;
           }
           return head;
         },

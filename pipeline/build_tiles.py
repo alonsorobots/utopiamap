@@ -1055,6 +1055,14 @@ def _make_disaster_processor(axis_id: str, src_name: str, *, hover_label: str,
         # gamma compression for visibility: y = (x/cap)^0.4 * cap
         with np.errstate(invalid="ignore"):
             arr = np.power(arr / cap, 0.4) * cap
+        # Mask oceans + large lakes so water bodies don't render as "safe land"
+        try:
+            wm = build_water_mask(src)
+        except Exception as e:
+            print(f"  water mask build failed: {e}; skipping mask")
+            wm = None
+        if wm is not None and wm.shape == arr.shape:
+            arr[wm] = -9999
         profile.update(dtype="float32", nodata=-9999, compress="deflate")
         with rasterio.open(stretched, "w", **profile) as dst:
             dst.write(arr.astype(np.float32), 1)

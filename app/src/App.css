@@ -1129,6 +1129,40 @@
   color: rgba(220, 200, 150, 1);
 }
 
+.axis-detail-sources-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: rgba(180, 160, 120, 0.85);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.axis-detail-sources-toggle:hover {
+  color: rgba(220, 200, 150, 1);
+}
+
+.axis-sources-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0 0;
+}
+.axis-sources-list li {
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.axis-sources-list li:last-child { border-bottom: none; }
+.axis-sources-list a {
+  color: rgba(180, 160, 120, 0.85);
+  text-decoration: none;
+}
+.axis-sources-list a:hover {
+  color: rgba(220, 200, 150, 1);
+  text-decoration: underline;
+}
+
 .axis-detail-range {
   color: rgba(255, 255, 255, 0.4);
   font-family: 'SF Mono', 'Fira Code', monospace;

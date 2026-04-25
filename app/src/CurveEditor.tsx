@@ -18,6 +18,10 @@ export interface AxisConfig {
   unitDescription?: string;
   source?: string;
   sourceUrl?: string;
+  // For axes built from many independent datasets (e.g. Disasters), list each
+  // source as { name, url } so the info panel can show a separate "Sources"
+  // popup with one link per dataset instead of stuffing everything into source.
+  sources?: { name: string; url?: string }[];
   hoverLabel?: string;
   defaultCurve?: CurvePoint[];
   staticYear?: number;

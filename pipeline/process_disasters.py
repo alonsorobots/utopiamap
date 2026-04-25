@@ -465,30 +465,83 @@ def load_etopo_aligned() -> np.ndarray:
 def apply_calibration(intensity: np.ndarray,
                       iso_mask: np.ndarray,
                       code_lookup: dict[int, str],
-                      country_rates: dict[str, float]) -> np.ndarray:
-    """For each country, scale intensity so that pixel mean × constant = R_hc.
+                      country_rates: dict[str, float],
+                      blend_intensity_weight: float = 0.5) -> np.ndarray:
+    """Calibrate hazard intensity to deaths/M/yr per pixel.
 
-    Within a country: r_p = R_hc × I_p / mean(I over country pixels), capped at
-    CAP_MULTIPLIER × R_hc.
+    Two independent estimates are computed and blended:
+
+      r_country  -- "given the country's actual mortality history (EM-DAT) and
+                    where the hazard concentrates within the country, what's
+                    the per-pixel rate?"  Captures real-world building codes,
+                    early warning, evacuation -- so it correctly says e.g.
+                    Japan/USA earthquake deaths are far rarer per capita than
+                    Haiti/Iran. Within a country: r_p = R_hc * I_p / mean(I_c).
+
+      r_intensity -- "given global average mortality per unit hazard, what
+                    would this pixel's intensity imply?"  Independent of
+                    country, so a physically dangerous pixel always shows
+                    meaningful risk even in well-prepared countries.
+                    r_p = R_global * I_p / mean(I_world)
+
+    The final per-pixel rate is a weighted blend so neither signal dominates:
+    well-prepared but high-hazard regions (SF Bay, Tokyo) still show up, and
+    poorly-prepared low-hazard regions are not over-penalized.
     """
+    intensity = np.asarray(intensity, dtype=np.float32)
     out = np.zeros_like(intensity, dtype=np.float32)
+
+    finite_pos = np.isfinite(intensity) & (intensity > 0)
+    global_mean_I = float(np.nanmean(intensity[finite_pos])) if finite_pos.any() else 0.0
+
+    total_dr = 0.0  # sum of country_rate * country_pop for global mean
+    total_pop = 0.0
     for iid, iso3 in code_lookup.items():
         rate = country_rates.get(iso3, 0.0)
         if rate <= 0:
             continue
+        n = int((iso_mask == iid).sum())
+        if n == 0:
+            continue
+        # weight by country pixel count as a population proxy
+        total_dr += rate * n
+        total_pop += n
+    global_rate = (total_dr / total_pop) if total_pop > 0 else 0.0
+
+    # Pure-intensity baseline (global), available everywhere on land
+    if global_mean_I > 0 and global_rate > 0:
+        r_intensity_global = (global_rate * intensity / global_mean_I).astype(np.float32)
+    else:
+        r_intensity_global = np.zeros_like(intensity, dtype=np.float32)
+
+    for iid, iso3 in code_lookup.items():
+        rate = country_rates.get(iso3, 0.0)
         sel = (iso_mask == iid)
         if not np.any(sel):
             continue
-        I = intensity[sel]
-        m = np.nanmean(I)
-        if not np.isfinite(m) or m <= 0:
-            # uniform mean if intensity unavailable
-            out[sel] = rate
-            continue
-        r = rate * I / m
-        cap = rate * CAP_MULTIPLIER
-        r = np.minimum(r, cap)
-        out[sel] = r
+
+        I_country = intensity[sel]
+        m = np.nanmean(I_country)
+
+        if rate > 0 and np.isfinite(m) and m > 0:
+            r_country = (rate * I_country / m).astype(np.float32)
+            r_country = np.minimum(r_country, rate * CAP_MULTIPLIER)
+        elif rate > 0:
+            r_country = np.full_like(I_country, rate, dtype=np.float32)
+        else:
+            r_country = np.zeros_like(I_country, dtype=np.float32)
+
+        r_int = r_intensity_global[sel]
+
+        # Blend: country baseline (history-aware) + intensity baseline (physics-aware)
+        w = blend_intensity_weight
+        r_blend = (1.0 - w) * r_country + w * r_int
+
+        # Make sure highly-prepared countries still show non-trivial rate where
+        # the physical hazard is high. Floor at 0.25 * physical baseline.
+        r_blend = np.maximum(r_blend, 0.25 * r_int)
+
+        out[sel] = r_blend
     return out
 
 

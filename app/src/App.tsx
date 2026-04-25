@@ -114,6 +114,13 @@ const HAZARD_LABELS: Record<string, string> = {
   wildfire:   'Wildfire',
   landslide:  'Landslide',
 };
+function fmtOddsPerYear(v: number): string {
+  if (v <= 0) return '~0';
+  const oneIn = Math.round(1e6 / v);
+  if (oneIn >= 1_000_000) return `1 in ${(oneIn / 1_000_000).toFixed(1)}M / yr`;
+  if (oneIn >= 1000) return `1 in ${Math.round(oneIn / 1000)}k / yr`;
+  return `1 in ${oneIn.toLocaleString()} / yr`;
+}
 function riskCellAt(lat: number, lng: number): {
   composite: number;                    // deaths/M/yr at this cell (composite)
   hazards: { id: string; rate: number }[];
@@ -739,56 +746,96 @@ const AXES: Record<string, AxisConfig> = {
       void loadRiskLookup();
       const cell = (lat !== undefined && lng !== undefined) ? riskCellAt(lat, lng) : null;
       const total = cell ? cell.composite : norm * 200;
-      const pct = (total / 1e6) * 100;
-      const oneIn = total > 0 ? Math.round(1e6 / total) : null;
-      const headline = `${fmtMortality(total)} deaths/M/yr` +
-        (total > 0
-          ? `  (${pct.toFixed(4)}%/yr, 1 in ${oneIn?.toLocaleString()})`
-          : '');
+      const headline = total > 0
+        ? `${fmtMortality(total)} d/M/yr  (${fmtOddsPerYear(total)})`
+        : `${fmtMortality(total)} d/M/yr`;
       if (!cell) return headline;
       const lines = cell.hazards
         .filter(h => h.rate >= 0.05)
         .sort((a, b) => b.rate - a.rate)
-        .map(h => `  ${HAZARD_LABELS[h.id] || h.id}: ${fmtMortality(h.rate)}`);
+        .map(h => `  ${(HAZARD_LABELS[h.id] || h.id).padEnd(11)} ${fmtMortality(h.rate)}`);
+      if (!lines.length) return headline;
       return [headline, ...lines].join('\n');
     },
-    description: 'Probability of dying from natural disasters in this location, per year.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
-    whoIsThisFor: 'Homebuyers, families, or anyone weighing seismic, flood, cyclone, tsunami, volcanic, drought, wildfire, and landslide exposure.',
-    unitDescription: 'Annual deaths per million people from natural disasters. Composite of 8 hazards: earthquakes (GEM PGA), river flood (JRC), tropical cyclones (STORM), tsunami (Davies PTHA), volcanic activity (Smithsonian GVP), drought (SPEI), wildfire, and landslide. Each pixel is the per-country EM-DAT 1980-2020 baseline modulated by within-country hazard intensity. For reference: traffic ≈ 120, heart disease ≈ 2,000, all causes ≈ 8,000 deaths/M/yr globally.',
-    source: 'GEM v2023.1 + JRC Flood + STORM + PTHA + GVP + SPEI + EM-DAT',
-    sourceUrl: 'https://public.emdat.be/',
+    description: 'Annual chance of dying from a natural disaster.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
+    whoIsThisFor: 'Homebuyers and anyone weighing earthquake, flood, cyclone, tsunami, volcanic, drought, wildfire, and landslide exposure.',
+    unitDescription: 'Deaths per million people per year. Reference: traffic ~120, heart disease ~2,000, all causes ~8,000 d/M/yr.',
+    source: 'See sources panel',
+    sources: [
+      { name: 'EM-DAT (mortality, 1980-2020)', url: 'https://public.emdat.be/' },
+      { name: 'Our World in Data (decadal disaster deaths + population)', url: 'https://ourworldindata.org/natural-disasters' },
+      { name: 'GEM Global Seismic Hazard Map v2023.1 (PGA)', url: 'https://maps.openquake.org/map/global-seismic-hazard-map/' },
+      { name: 'JRC GloFAS Global River Flood Hazard (RP100)', url: 'https://data.jrc.ec.europa.eu/dataset/jrc-floods-floodmapgl_rp50y-tif' },
+      { name: 'Bloemendaal STORM tropical cyclone wind (RP100)', url: 'https://data.4tu.nl/articles/dataset/STORM_climate_change_synthetic_tropical_cyclone_tracks/12706085' },
+      { name: 'Davies et al. 2017 Global PTHA (tsunami)', url: 'https://nhess.copernicus.org/articles/18/3105/2018/' },
+      { name: 'Smithsonian Global Volcanism Program', url: 'https://volcano.si.edu/list_volcano_holocene.cfm' },
+      { name: 'SPEI-12 global drought index', url: 'https://spei.csic.es/database.html' },
+      { name: 'ETOPO 2022 Global Relief (slope, landslide proxy)', url: 'https://www.ncei.noaa.gov/products/etopo-global-relief-model' },
+    ],
     hoverLabel: 'Disaster',
     defaultCurve: LINEAR_UP,
     staticYear: 2023,
-    infoWidth: 320,
-    infoHeight: 260
+    infoWidth: 311,
+    infoHeight: 184
   },
   ...((): Record<string, AxisConfig> => {
-    const HAZ_DEF: { id: string; key: string; label: string; hazardKey: string; who: string; src: string }[] = [
-      { id: 'eq',        key: 'earthquake', label: 'Earthquakes',  hazardKey: 'earthquake',
-        who: 'Anyone considering seismic exposure (Pacific Rim, Himalaya, East Africa Rift).',
-        src: 'GEM Global Seismic Hazard Map v2023.1 (PGA, 475-year return period, ~5 km) calibrated to EM-DAT country deaths 1980-2020. Haiti, Iran, Nepal, Turkey rank highest.' },
-      { id: 'flood',     key: 'flood',      label: 'River Floods', hazardKey: 'flood',
+    const HAZ_DEF: { id: string; key: string; label: string; hazardKey: string; who: string; desc: string; sources: { name: string; url?: string }[] }[] = [
+      { id: 'eq', key: 'earthquake', label: 'Earthquakes', hazardKey: 'earthquake',
+        who: 'Anyone weighing seismic exposure (Pacific Rim, Himalaya, Andes, East Africa Rift).',
+        desc: 'Annual chance of dying from an earthquake.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'GEM Global Seismic Hazard Map v2023.1 (PGA, 475-yr)', url: 'https://maps.openquake.org/map/global-seismic-hazard-map/' },
+          { name: 'EM-DAT country deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
+      { id: 'flood', key: 'flood', label: 'River Floods', hazardKey: 'flood',
         who: 'Anyone near rivers, deltas, or low-elevation watersheds.',
-        src: 'JRC Global River Flood Hazard 100-year return depth (~1 km) calibrated to EM-DAT country flood deaths. Bangladesh, Pakistan, Venezuela, Mozambique rank highest.' },
-      { id: 'cyclone',   key: 'cyclone',    label: 'Cyclones',     hazardKey: 'cyclone',
+        desc: 'Annual chance of dying from a river flood.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'JRC GloFAS Global River Flood Hazard (RP100)', url: 'https://data.jrc.ec.europa.eu/dataset/jrc-floods-floodmapgl_rp50y-tif' },
+          { name: 'EM-DAT country deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
+      { id: 'cyclone', key: 'cyclone', label: 'Cyclones', hazardKey: 'cyclone',
         who: 'Anyone in tropical or subtropical coastal zones (hurricane, typhoon, cyclone).',
-        src: 'Bloemendaal STORM 100-year return-period max wind (~10 km, present climate) calibrated to EM-DAT cyclone deaths. Philippines, Bangladesh, Myanmar, Caribbean rank highest.' },
-      { id: 'tsunami',   key: 'tsunami',    label: 'Tsunami',      hazardKey: 'tsunami',
-        who: 'Anyone living within ~30 km of a coastline near a subduction zone.',
-        src: 'Davies et al. 2017 Global PTHA (1/500-year coastal runup) distributed against the long-term tsunami fatality budget (~1,500 deaths/yr globally, including 2011 Tohoku). Indonesia, Japan, Chile, Pacific Northwest rank highest.' },
-      { id: 'volcano',   key: 'volcano',    label: 'Volcanoes',    hazardKey: 'volcano',
+        desc: 'Annual chance of dying from a tropical cyclone.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'Bloemendaal STORM 100-yr max wind (present climate)', url: 'https://data.4tu.nl/articles/dataset/STORM_climate_change_synthetic_tropical_cyclone_tracks/12706085' },
+          { name: 'EM-DAT cyclone deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
+      { id: 'tsunami', key: 'tsunami', label: 'Tsunami', hazardKey: 'tsunami',
+        who: 'Anyone within ~30 km of a coastline near a subduction zone.',
+        desc: 'Annual chance of dying from a tsunami.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'Davies et al. 2017 Global PTHA (1/500-yr coastal runup)', url: 'https://nhess.copernicus.org/articles/18/3105/2018/' },
+          { name: 'Long-term global tsunami fatality budget (~1,500/yr)' },
+        ] },
+      { id: 'volcano', key: 'volcano', label: 'Volcanoes', hazardKey: 'volcano',
         who: 'Anyone within ~30 km of a Holocene volcano with recent activity.',
-        src: 'Smithsonian Global Volcanism Program Holocene volcano list with ~25 km Gaussian kernel, calibrated to EM-DAT volcano deaths. Indonesia, Philippines, Colombia, Italy rank highest.' },
-      { id: 'drought',   key: 'drought',    label: 'Droughts',     hazardKey: 'drought',
+        desc: 'Annual chance of dying from a volcanic eruption.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'Smithsonian Global Volcanism Program (Holocene volcanoes)', url: 'https://volcano.si.edu/list_volcano_holocene.cfm' },
+          { name: 'EM-DAT volcano deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
+      { id: 'drought', key: 'drought', label: 'Droughts', hazardKey: 'drought',
         who: 'Anyone in arid or semi-arid agricultural regions where droughts cause famine.',
-        src: 'SPEI-12 (12-month standardized precipitation-evapotranspiration) frequency of severe drought (SPEI < -1.5) over 1980-2006, calibrated to EM-DAT drought deaths. Sahel, Horn of Africa, parts of Central Asia rank highest.' },
-      { id: 'wildfire',  key: 'wildfire',   label: 'Wildfires',    hazardKey: 'wildfire',
+        desc: 'Annual chance of dying from drought-driven famine.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'SPEI-12 severe-drought frequency (1980-2006)', url: 'https://spei.csic.es/database.html' },
+          { name: 'EM-DAT drought deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
+      { id: 'wildfire', key: 'wildfire', label: 'Wildfires', hazardKey: 'wildfire',
         who: 'Anyone in fire-prone climates (Mediterranean, western US, southern Australia).',
-        src: 'Drought-frequency proxy calibrated to EM-DAT wildfire deaths (Greece, Portugal, Chile rank highest). Direct deaths only -- smoke health effects not included.' },
-      { id: 'landslide', key: 'landslide',  label: 'Landslides',   hazardKey: 'landslide',
+        desc: 'Annual chance of direct death from wildfire.\nBright = safe. Dark = dangerous.\nSmoke health effects not included.',
+        sources: [
+          { name: 'Drought-frequency proxy (SPEI-12)', url: 'https://spei.csic.es/database.html' },
+          { name: 'EM-DAT wildfire deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
+      { id: 'landslide', key: 'landslide', label: 'Landslides', hazardKey: 'landslide',
         who: 'Anyone living below steep slopes in heavy-rain regions.',
-        src: 'Slope from ETOPO 2022 calibrated to EM-DAT mass-movement deaths (Papua New Guinea, Sierra Leone, Iceland rank highest). Wet and dry mass movements combined.' },
+        desc: 'Annual chance of dying from a landslide or mass movement.\nBright = safe. Dark = dangerous.',
+        sources: [
+          { name: 'ETOPO 2022 Global Relief (slope)', url: 'https://www.ncei.noaa.gov/products/etopo-global-relief-model' },
+          { name: 'EM-DAT mass-movement deaths 1980-2020', url: 'https://public.emdat.be/' },
+        ] },
     ];
     const out: Record<string, AxisConfig> = {};
     for (const h of HAZ_DEF) {
@@ -806,21 +853,20 @@ const AXES: Record<string, AxisConfig> = {
             const found = cell.hazards.find(x => x.id === h.hazardKey);
             if (found) val = found.rate;
           }
-          const pct = (val / 1e6) * 100;
-          const oneIn = val > 0 ? Math.round(1e6 / val) : null;
-          return `${fmtMortality(val)} deaths/M/yr` +
-            (val > 0 ? `  (${pct.toFixed(4)}%/yr, 1 in ${oneIn?.toLocaleString()})` : '');
+          return val > 0
+            ? `${fmtMortality(val)} d/M/yr  (${fmtOddsPerYear(val)})`
+            : `${fmtMortality(val)} d/M/yr`;
         },
-        description: `Probability of dying from ${h.label.toLowerCase()} in this location, per year.\nBright = safe. Dark = dangerous.`,
+        description: h.desc,
         whoIsThisFor: h.who,
-        unitDescription: h.src,
-        source: 'See above',
-        sourceUrl: 'https://public.emdat.be/',
+        unitDescription: 'Deaths per million people per year. Reference: traffic ~120, heart disease ~2,000, all causes ~8,000 d/M/yr.',
+        source: 'See sources panel',
+        sources: h.sources,
         hoverLabel: h.label.replace(/s$/, ''),
         defaultCurve: LINEAR_UP,
         staticYear: 2023,
-        infoWidth: 320,
-        infoHeight: 220,
+        infoWidth: 311,
+        infoHeight: 184,
       };
     }
     return out;
@@ -1187,6 +1233,7 @@ export default function App() {
   const [saved] = useState(() => (HAS_SHARE_HASH ? null : loadSavedState()));
   const [activeAxis, setActiveAxis] = useState(saved?.activeAxis ?? 'temp');
   const [showInfoPanel, setShowInfoPanel] = useState(true);
+  const [showSourcesPanel, setShowSourcesPanel] = useState(false);
   const [formula, setFormula] = useState(saved?.formula ?? '');
   const [formulaError, setFormulaError] = useState<string | null>(null);
   const curveStatesRef = useRef<Record<string, CurvePoint[]>>(saved?.curves ?? {});
@@ -2037,11 +2084,21 @@ export default function App() {
               <p style={{ whiteSpace: 'pre-line' }}>{axis.description}</p>
               {axis.whoIsThisFor && <p className="axis-detail-who" style={{ marginTop: '8px' }}><strong>Who is this for:</strong> {axis.whoIsThisFor}</p>}
               {axis.unitDescription && <p className="axis-detail-units" style={{ marginTop: '8px' }}>{axis.unitDescription}</p>}
-              <p className="axis-detail-source">
-                Source: {axis.sourceUrl
-                  ? <a href={axis.sourceUrl} target="_blank" rel="noopener noreferrer">{axis.source}</a>
-                  : axis.source}
-              </p>
+              {axis.sources && axis.sources.length > 0 ? (
+                <p className="axis-detail-source">
+                  Sources:{' '}
+                  <button
+                    className="axis-detail-sources-toggle"
+                    onClick={() => setShowSourcesPanel((v) => !v)}
+                  >{axis.sources.length} datasets {showSourcesPanel ? '▾' : '▸'}</button>
+                </p>
+              ) : (
+                <p className="axis-detail-source">
+                  Source: {axis.sourceUrl
+                    ? <a href={axis.sourceUrl} target="_blank" rel="noopener noreferrer">{axis.source}</a>
+                    : axis.source}
+                </p>
+              )}
               <div className="axis-detail-hint">[i] to toggle</div>
             </div>
           )}
@@ -2054,6 +2111,34 @@ export default function App() {
           onClick={() => setShowInfoPanel(true)}
           title="Show data info (i)"
         >i</button>
+      )}
+
+      {showInfoPanel && showSourcesPanel && axis.sources && axis.sources.length > 0 && (
+        <DraggablePanel
+          key={`sources-${activeAxis}`}
+          initialRight={24 + infoW + 12}
+          initialBottomOffset={44}
+          initialWidth={320}
+          initialHeight={Math.min(360, 60 + axis.sources.length * 22)}
+          title={`${axis.label} sources`}
+        >
+          {(w, h) => (
+            <div className="axis-detail-content" style={{ width: w, height: h, overflowY: 'auto', paddingRight: '4px' }}>
+              <button className="axis-detail-close" onClick={() => setShowSourcesPanel(false)}>x</button>
+              <ul className="axis-sources-list">
+                {axis.sources!.map((s, i) => (
+                  <li key={i}>
+                    {s.url ? (
+                      <a href={s.url} target="_blank" rel="noopener noreferrer">{s.name}</a>
+                    ) : (
+                      <span>{s.name}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </DraggablePanel>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import {
   tileDataKey,
   fetchTileData,
   setRepaintCallback,
+  setTileArrivedCallback,
   flushAllRealDataCache,
 } from './tileDataLoader';
 
@@ -1015,6 +1016,22 @@ export function createHeatmapLayer(): CustomLayerInterface {
       rebuildProgram(gl, [activeAxisId], null);
 
       setRepaintCallback(() => map.triggerRepaint());
+      // When tile pixels land in the data cache, push them straight to the
+      // matching GL texture if it already exists, then ask for a repaint.
+      // This makes "data appears the moment it arrives" work even if the
+      // browser/MapLibre swallows our triggerRepaint() (which we observed on
+      // initial load: tiles would sit blank until the user wiggled a curve
+      // vertex or changed axis to force another render pass).
+      setTileArrivedCallback((axis, z, x, y, pixels) => {
+        const key = tileCacheKey(axis, z, x, y);
+        const tex = tileCache.get(key);
+        if (tex) {
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, TILE_PX, TILE_PX, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          realTileLoaded.add(key);
+        }
+        map.triggerRepaint();
+      });
       loadCatalog().then(() => {
         // Drop any synthetic-data textures that were cached during the brief
         // window before the catalog arrived. Otherwise the cache-hit path

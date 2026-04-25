@@ -39,6 +39,22 @@ export function setRepaintCallback(cb: () => void) {
   repaintCallback = cb;
 }
 
+// Optional direct-upload hook fired the moment a tile's pixels land in the
+// data cache. The heatmap layer uses this to upload to its GL texture
+// immediately, instead of waiting for a render() pass to notice the data --
+// which turned out to be unreliable on initial load (triggerRepaint from a
+// promise microtask sometimes does not produce a render frame, leaving the
+// map blank until the user wiggles something to force a repaint).
+let tileArrivedCallback:
+  | ((axis: string, z: number, x: number, y: number, pixels: Uint8Array) => void)
+  | null = null;
+
+export function setTileArrivedCallback(
+  cb: (axis: string, z: number, x: number, y: number, pixels: Uint8Array) => void,
+) {
+  tileArrivedCallback = cb;
+}
+
 export async function loadCatalog(): Promise<Catalog | null> {
   if (catalog) return catalog;
   if (catalogPromise) return catalogPromise;
@@ -200,17 +216,19 @@ export function fetchTileData(
   }
 
   pendingFetches.add(key);
-  fetchWithOverzoom(getArchive(url), z, wrappedX, y, key);
+  fetchWithOverzoom(getArchive(url), axis, z, wrappedX, y, key);
 }
 
 async function fetchWithOverzoom(
   pm: PMTiles,
+  axis: string,
   z: number,
   x: number,
   y: number,
   key: string,
 ) {
   const MAX_PARENT_LEVELS = 6;
+  const fetchEpoch = cacheEpoch;
 
   for (let dz = 0; dz <= MAX_PARENT_LEVELS && z - dz >= 0; dz++) {
     const pz = z - dz;
@@ -227,8 +245,15 @@ async function fetchWithOverzoom(
 
       if (pixels) {
         pendingFetches.delete(key);
+        // If the user changed year/scenario while we were fetching this tile
+        // its data is now stale. Drop it on the floor.
+        if (fetchEpoch !== cacheEpoch) return;
         tileDataCache.set(key, pixels);
         tileEpoch.set(key, cacheEpoch);
+        // Direct-upload path: let the heatmap layer push pixels to its GL
+        // texture immediately. This sidesteps a flaky dependency on
+        // triggerRepaint actually producing a render frame on initial load.
+        tileArrivedCallback?.(axis, z, x, y, pixels);
         repaintCallback?.();
         return;
       }

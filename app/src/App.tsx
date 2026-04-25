@@ -17,7 +17,7 @@ import {
   exportPaintedMask,
   importPaintedMask,
 } from './heatmapLayer';
-import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getTilesBase } from './tileDataLoader';
+import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getCatalog, getTilesBase } from './tileDataLoader';
 import type { FormulaError, PaintedMask } from './heatmapLayer';
 import { CurveEditor } from './CurveEditor';
 import type { AxisConfig, CurvePoint } from './CurveEditor';
@@ -1026,7 +1026,7 @@ export default function App() {
   // getAllAxisYears() (which read from a module-level cache) actually return
   // data the first time TimePanel renders.  Without this the data-year ticks
   // would only appear after some other state change happened to re-render App.
-  const [, setCatalogReady] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(false);
   useEffect(() => {
     let alive = true;
     loadCatalog().then(() => { if (alive) setCatalogReady(true); });
@@ -1313,6 +1313,24 @@ export default function App() {
     if (saved?.year) setTimeYear(saved.year, 'historical');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Snap the initial timeline year to one that the active axis actually has
+  // data for. TimePanel's default is `new Date().getFullYear()`, but several
+  // axes (temp, water, tvar, gdp, ...) end at 2024 and have no projections,
+  // so a fresh-load default of 2026 silently maps to "no archive URL", which
+  // caches a blank tile that gets uploaded as if it were real data. Result:
+  // the heatmap renders blank until the user touches an axis or scrubs the
+  // slider (both of which trigger their own snap and refetch).
+  //
+  // Runs once the catalog and map are both ready, and only when there's no
+  // saved or shared session to honour.
+  useEffect(() => {
+    if (!mapLoaded || !catalogReady) return;
+    if (HAS_SHARE_HASH || saved?.year) return;
+    if (!getCatalog()) return;
+    snapYearToAxis(activeAxis);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapLoaded, catalogReady]);
 
   // Apply state decoded from a #view= permalink once both the gzip decode
   // and the map have finished initialising. We do this imperatively rather

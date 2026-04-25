@@ -1001,19 +1001,6 @@ export function createHeatmapLayer(): CustomLayerInterface {
     onAdd(map, gl) {
       storedMap = map;
       storedGL = gl;
-      console.info(`[utopia] heatmap onAdd, ua=${navigator.userAgent.split(' ').slice(-2).join(' ')}`);
-      // Expose a few internals so we can diagnose the "blank on load" bug
-      // remotely by asking the user to paste console output.
-      (window as unknown as { __utopia: unknown }).__utopia = {
-        get tileCacheSize() { return tileCache.size; },
-        get realTileLoadedSize() { return realTileLoaded.size; },
-        get visibleTiles() { return storedMap ? getVisibleTiles(storedMap).length : 0; },
-        get bounds() { return storedMap?.getBounds().toArray(); },
-        get zoom() { return storedMap?.getZoom(); },
-        get activeAxisId() { return activeAxisId; },
-        get currentYear() { return currentYear; },
-        renderCount: 0,
-      };
 
       vertexBuffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
@@ -1069,14 +1056,6 @@ export function createHeatmapLayer(): CustomLayerInterface {
 
     render(gl, _args) {
       if (!currentProgram || !currentLocations || !storedMap) return;
-      const dbg = (window as unknown as { __utopia?: { renderCount: number } }).__utopia;
-      if (dbg) {
-        dbg.renderCount++;
-        if (dbg.renderCount <= 3 || dbg.renderCount === 10 || dbg.renderCount === 30) {
-          const tiles = getVisibleTiles(storedMap);
-          console.info(`[utopia] render #${dbg.renderCount} axis=${activeAxisId} tiles=${tiles.length} cache=${tileCache.size} loaded=${realTileLoaded.size}`);
-        }
-      }
 
       // Upload any dirty curve textures
       for (const [, entry] of curveEntries) {

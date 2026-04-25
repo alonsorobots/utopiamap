@@ -265,7 +265,12 @@ def hazard_earthquake() -> np.ndarray:
     a = a.astype(np.float32)
     a[~np.isfinite(a)] = 0
     aligned.unlink(missing_ok=True)
-    return np.maximum(a, 0)
+    a = np.maximum(a, 0)
+    # GEM source is 3 arcmin (~5 km). Light blur to soften visible bilinear
+    # facets without losing the location of major fault zones.
+    from scipy.ndimage import gaussian_filter
+    a = gaussian_filter(a, sigma=1.0).astype(np.float32)
+    return a
 
 
 def hazard_flood() -> np.ndarray:
@@ -297,6 +302,9 @@ def hazard_cyclone() -> np.ndarray:
     a[~np.isfinite(a)] = 0
     a[a < 0] = 0
     aligned.unlink(missing_ok=True)
+    # STORM source is ~10 km; smooth to remove resampling facets.
+    from scipy.ndimage import gaussian_filter
+    a = gaussian_filter(a, sigma=1.5).astype(np.float32)
     return a
 
 
@@ -326,9 +334,11 @@ def hazard_tsunami() -> np.ndarray:
                 if runup > arr[y, x]:
                     arr[y, x] = runup
 
-    # Propagate inland: dilate by ~30 km (6 px at 5km grid) with quick max filter
-    from scipy.ndimage import maximum_filter
+    # Propagate inland: dilate by ~30 km then smooth so the dilated patches
+    # blend instead of looking like blocky stamps.
+    from scipy.ndimage import maximum_filter, gaussian_filter
     arr = maximum_filter(arr, size=13)  # ~65 km neighborhood
+    arr = gaussian_filter(arr, sigma=2.0).astype(np.float32)  # ~10 km
     return arr
 
 
@@ -414,11 +424,18 @@ def hazard_drought() -> np.ndarray:
         arrs.append(out.astype(np.float32))
     if not arrs:
         return np.zeros((TARGET_H, TARGET_W), dtype=np.float32)
-    # Combine hemispheres: take max where both have values (they shouldn't overlap)
+        # Combine hemispheres: take max where both have values (they shouldn't overlap)
     res = arrs[0]
     for a in arrs[1:]:
         res = np.where(a > 0, np.maximum(res, a), res)
     res[~np.isfinite(res)] = 0
+    # SPEI source is 0.5 deg (~55 km). After bilinear interpolation to the 5 km
+    # TARGET grid the high-contrast colormap reveals every isoline of the
+    # bilinear surface as a visible band ("contour ringing"). A light Gaussian
+    # blur erases those facets without losing the broad pattern, since the data
+    # was never higher resolution than ~50 km to begin with.
+    from scipy.ndimage import gaussian_filter
+    res = gaussian_filter(res, sigma=4.0).astype(np.float32)  # ~22 km
     return res
 
 
@@ -447,6 +464,10 @@ def hazard_landslide(elev_aligned: np.ndarray) -> np.ndarray:
     pixel_m = TARGET_RES * 111000.0  # meters per pixel along meridian
     slope_rad = np.arctan(rise_per_pixel / pixel_m)
     slope_deg = np.degrees(slope_rad).astype(np.float32)
+    # Light smoothing: per-pixel slope is noisy; landslide hazard is a
+    # neighborhood property, not a single-pixel one.
+    from scipy.ndimage import gaussian_filter
+    slope_deg = gaussian_filter(slope_deg, sigma=1.0).astype(np.float32)
     return slope_deg
 
 

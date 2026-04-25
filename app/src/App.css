@@ -112,8 +112,17 @@
   background: rgba(255,255,255,0.06);
 }
 
-.formula-display-error {
-  border-color: rgba(239, 68, 68, 0.35);
+.formula-display-error,
+.formula-display-error:hover,
+.formula-display-error:focus {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.10);
+  color: #fca5a5;
+  caret-color: #fca5a5;
+}
+
+.formula-display-error .formula-placeholder {
+  color: rgba(252, 165, 165, 0.6);
 }
 
 .formula-placeholder {

@@ -1314,19 +1314,21 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Snap the initial timeline year to one that the active axis actually has
-  // data for. TimePanel's default is `new Date().getFullYear()`, but several
-  // axes (temp, water, tvar, gdp, ...) end at 2024 and have no projections,
-  // so a fresh-load default of 2026 silently maps to "no archive URL", which
-  // caches a blank tile that gets uploaded as if it were real data. Result:
-  // the heatmap renders blank until the user touches an axis or scrubs the
-  // slider (both of which trigger their own snap and refetch).
-  //
-  // Runs once the catalog and map are both ready, and only when there's no
-  // saved or shared session to honour.
+  // Snap the initial timeline year to one the active axis actually has data
+  // for. Two ways this matters on first paint:
+  //   1. Fresh sessions: TimePanel's default is `new Date().getFullYear()`,
+  //      but several axes (temp/water/tvar/gdp/...) end at 2024 with no
+  //      projections. resolveArchiveUrl returns '' for years past the last
+  //      archive, fetchTileData caches a blank tile, and the heatmap
+  //      uploads the blank as if it were real -- map looks blank.
+  //   2. Returning sessions whose saved.year is past the active axis's last
+  //      year (e.g. localStorage from a session that hit bug #1 before the
+  //      fix existed). Same blank-tile failure mode.
+  // snapYearToAxis is a no-op when the current year is already valid for
+  // the axis, so it's safe to run unconditionally for non-share sessions.
   useEffect(() => {
     if (!mapLoaded || !catalogReady) return;
-    if (HAS_SHARE_HASH || saved?.year) return;
+    if (HAS_SHARE_HASH) return;
     if (!getCatalog()) return;
     snapYearToAxis(activeAxis);
   // eslint-disable-next-line react-hooks/exhaustive-deps

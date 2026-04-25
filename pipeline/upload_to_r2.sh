@@ -30,9 +30,14 @@ echo "Uploading tiles to Cloudflare R2..."
 echo "Source: $TILES_DIR"
 echo "Dest:   $BUCKET"
 
-rclone sync "$TILES_DIR" "$BUCKET" \
+# Use `copy` (not `sync`) so we never delete tiles in R2 that aren't present
+# locally. Different machines may build different subsets of tiles, and the
+# bucket is the merged superset. The catalog.json should always be a full
+# manifest of everything in R2.
+rclone copy "$TILES_DIR" "$BUCKET" \
   --include "*.pmtiles" \
   --include "catalog.json" \
+  --copy-links \
   --progress \
   --transfers 8 \
   --checkers 16

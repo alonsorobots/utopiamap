@@ -78,7 +78,64 @@ const LINEAR_UP: CurvePoint[] = [
   { x: 1, y: 0 },
 ];
 
-const COUNTRY_AXES = new Set(['gdp', 'risk', 'free', 'inet', 'energy', 'depv', 'e_consume']);
+const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy', 'depv', 'e_consume']);
+
+// Disaster mortality lookup (deaths per million per year, per hazard, on a
+// 0.5° grid). Loaded once for hover breakdown on `risk` and the 8 individual
+// hazard axes (eq, flood, cyclone, tsunami, volcano, drought, wildfire,
+// landslide).
+type RiskLookup = {
+  res: number;          // degrees per cell
+  w: number;            // grid width
+  h: number;            // grid height
+  hazards: { id: string; values: number[] }[];  // values are deaths/M/yr × 10
+  composite: number[];  // composite, deaths/M/yr × 10
+};
+let riskLookupCache: RiskLookup | null = null;
+let riskLookupLoading = false;
+function loadRiskLookup(): RiskLookup | null {
+  if (riskLookupCache) return riskLookupCache;
+  if (riskLookupLoading) return null;
+  riskLookupLoading = true;
+  fetch('/risk_lookup.json')
+    .then(r => r.ok ? r.json() : null)
+    .then((data: RiskLookup | null) => { if (data) riskLookupCache = data; })
+    .catch(() => {})
+    .finally(() => { riskLookupLoading = false; });
+  return null;
+}
+const HAZARD_LABELS: Record<string, string> = {
+  earthquake: 'Earthquake',
+  flood:      'Flood',
+  cyclone:    'Cyclone',
+  tsunami:    'Tsunami',
+  volcano:    'Volcano',
+  drought:    'Drought',
+  wildfire:   'Wildfire',
+  landslide:  'Landslide',
+};
+function riskCellAt(lat: number, lng: number): {
+  composite: number;                    // deaths/M/yr at this cell (composite)
+  hazards: { id: string; rate: number }[];
+} | null {
+  const lk = riskLookupCache;
+  if (!lk) return null;
+  let lon = lng;
+  if (lon > 180) lon -= 360;
+  if (lon < -180) lon += 360;
+  const ix = Math.max(0, Math.min(lk.w - 1, Math.floor((lon + 180) / lk.res)));
+  const iy = Math.max(0, Math.min(lk.h - 1, Math.floor((90 - lat) / lk.res)));
+  const idx = iy * lk.w + ix;
+  const composite = (lk.composite[idx] || 0) / 10;
+  const hazards = lk.hazards.map(h => ({ id: h.id, rate: (h.values[idx] || 0) / 10 }));
+  return { composite, hazards };
+}
+function fmtMortality(v: number): string {
+  if (v <= 0) return '<0.05';
+  if (v < 0.1) return '<0.1';
+  if (v < 10) return v.toFixed(1);
+  return Math.round(v).toString();
+}
 
 type EnergyData = { score: number, fuels?: Record<string, number> };
 let energyScores: Record<string, EnergyData> | null = null;
@@ -675,30 +732,99 @@ const AXES: Record<string, AxisConfig> = {
   risk: {
     label: 'Disasters',
     dataMin: 0,
-    dataMax: 100,
-    unit: '',
-    formatValue: (norm) => `${Math.round(norm * 100)}/100`,
-    formatHover: (norm) => {
-      const safety = Math.round(norm * 100);
-      let band: string;
-      if (safety > 80) band = 'Very safe';
-      else if (safety > 60) band = 'Safe';
-      else if (safety > 40) band = 'Moderate';
-      else if (safety > 20) band = 'Risky';
-      else band = 'High risk';
-      return `${safety}/100 (${band})`;
+    dataMax: 200,                    // deaths per million per year, capped for color
+    unit: '/M/yr',
+    formatValue: (norm) => `${(norm * 200).toFixed(0)} d/M/yr`,
+    formatHover: (norm, _u, lat, lng) => {
+      void loadRiskLookup();
+      const cell = (lat !== undefined && lng !== undefined) ? riskCellAt(lat, lng) : null;
+      const total = cell ? cell.composite : norm * 200;
+      const pct = (total / 1e6) * 100;
+      const oneIn = total > 0 ? Math.round(1e6 / total) : null;
+      const headline = `${fmtMortality(total)} deaths/M/yr` +
+        (total > 0
+          ? `  (${pct.toFixed(4)}%/yr, 1 in ${oneIn?.toLocaleString()})`
+          : '');
+      if (!cell) return headline;
+      const lines = cell.hazards
+        .filter(h => h.rate >= 0.05)
+        .sort((a, b) => b.rate - a.rate)
+        .map(h => `  ${HAZARD_LABELS[h.id] || h.id}: ${fmtMortality(h.rate)}`);
+      return [headline, ...lines].join('\n');
     },
-    description: 'How safe a place is from natural disasters -- earthquakes, floods, landslides, and sea-level rise.\nBright = safe. Dark = high risk.',
-    whoIsThisFor: 'Homebuyers, families, or preppers wanting to avoid flood zones, earthquake belts, and landslide-prone slopes.',
-    unitDescription: 'Safety score from 0-100 combining earthquake shaking, river flood risk, coastal sea-level exposure, and landslide danger. Vermont ~90, coastal Bangladesh ~15, San Andreas Fault ~30.',
-    source: 'GEM Seismic v2023.1 + JRC Flood + ETOPO 2022',
-    sourceUrl: 'https://www.globalquakemodel.org/product/global-seismic-hazard-map/',
-    hoverLabel: 'Safety',
+    description: 'Probability of dying from natural disasters in this location, per year.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
+    whoIsThisFor: 'Homebuyers, families, or anyone weighing seismic, flood, cyclone, tsunami, volcanic, drought, wildfire, and landslide exposure.',
+    unitDescription: 'Annual deaths per million people from natural disasters. Composite of 8 hazards: earthquakes (GEM PGA), river flood (JRC), tropical cyclones (STORM), tsunami (Davies PTHA), volcanic activity (Smithsonian GVP), drought (SPEI), wildfire, and landslide. Each pixel is the per-country EM-DAT 1980-2020 baseline modulated by within-country hazard intensity. For reference: traffic ≈ 120, heart disease ≈ 2,000, all causes ≈ 8,000 deaths/M/yr globally.',
+    source: 'GEM v2023.1 + JRC Flood + STORM + PTHA + GVP + SPEI + EM-DAT',
+    sourceUrl: 'https://public.emdat.be/',
+    hoverLabel: 'Disaster',
     defaultCurve: LINEAR_UP,
     staticYear: 2023,
-    infoWidth: 310,
-    infoHeight: 218
+    infoWidth: 320,
+    infoHeight: 260
   },
+  ...((): Record<string, AxisConfig> => {
+    const HAZ_DEF: { id: string; key: string; label: string; hazardKey: string; who: string; src: string }[] = [
+      { id: 'eq',        key: 'earthquake', label: 'Earthquakes',  hazardKey: 'earthquake',
+        who: 'Anyone considering seismic exposure (Pacific Rim, Himalaya, East Africa Rift).',
+        src: 'GEM Global Seismic Hazard Map v2023.1 (PGA, 475-year return period, ~5 km) calibrated to EM-DAT country deaths 1980-2020. Haiti, Iran, Nepal, Turkey rank highest.' },
+      { id: 'flood',     key: 'flood',      label: 'River Floods', hazardKey: 'flood',
+        who: 'Anyone near rivers, deltas, or low-elevation watersheds.',
+        src: 'JRC Global River Flood Hazard 100-year return depth (~1 km) calibrated to EM-DAT country flood deaths. Bangladesh, Pakistan, Venezuela, Mozambique rank highest.' },
+      { id: 'cyclone',   key: 'cyclone',    label: 'Cyclones',     hazardKey: 'cyclone',
+        who: 'Anyone in tropical or subtropical coastal zones (hurricane, typhoon, cyclone).',
+        src: 'Bloemendaal STORM 100-year return-period max wind (~10 km, present climate) calibrated to EM-DAT cyclone deaths. Philippines, Bangladesh, Myanmar, Caribbean rank highest.' },
+      { id: 'tsunami',   key: 'tsunami',    label: 'Tsunami',      hazardKey: 'tsunami',
+        who: 'Anyone living within ~30 km of a coastline near a subduction zone.',
+        src: 'Davies et al. 2017 Global PTHA (1/500-year coastal runup) distributed against the long-term tsunami fatality budget (~1,500 deaths/yr globally, including 2011 Tohoku). Indonesia, Japan, Chile, Pacific Northwest rank highest.' },
+      { id: 'volcano',   key: 'volcano',    label: 'Volcanoes',    hazardKey: 'volcano',
+        who: 'Anyone within ~30 km of a Holocene volcano with recent activity.',
+        src: 'Smithsonian Global Volcanism Program Holocene volcano list with ~25 km Gaussian kernel, calibrated to EM-DAT volcano deaths. Indonesia, Philippines, Colombia, Italy rank highest.' },
+      { id: 'drought',   key: 'drought',    label: 'Droughts',     hazardKey: 'drought',
+        who: 'Anyone in arid or semi-arid agricultural regions where droughts cause famine.',
+        src: 'SPEI-12 (12-month standardized precipitation-evapotranspiration) frequency of severe drought (SPEI < -1.5) over 1980-2006, calibrated to EM-DAT drought deaths. Sahel, Horn of Africa, parts of Central Asia rank highest.' },
+      { id: 'wildfire',  key: 'wildfire',   label: 'Wildfires',    hazardKey: 'wildfire',
+        who: 'Anyone in fire-prone climates (Mediterranean, western US, southern Australia).',
+        src: 'Drought-frequency proxy calibrated to EM-DAT wildfire deaths (Greece, Portugal, Chile rank highest). Direct deaths only -- smoke health effects not included.' },
+      { id: 'landslide', key: 'landslide',  label: 'Landslides',   hazardKey: 'landslide',
+        who: 'Anyone living below steep slopes in heavy-rain regions.',
+        src: 'Slope from ETOPO 2022 calibrated to EM-DAT mass-movement deaths (Papua New Guinea, Sierra Leone, Iceland rank highest). Wet and dry mass movements combined.' },
+    ];
+    const out: Record<string, AxisConfig> = {};
+    for (const h of HAZ_DEF) {
+      out[h.id] = {
+        label: h.label,
+        dataMin: 0,
+        dataMax: 200,
+        unit: '/M/yr',
+        formatValue: (norm) => `${(norm * 200).toFixed(0)} d/M/yr`,
+        formatHover: (norm, _u, lat, lng) => {
+          void loadRiskLookup();
+          const cell = (lat !== undefined && lng !== undefined) ? riskCellAt(lat, lng) : null;
+          let val = norm * 200;
+          if (cell) {
+            const found = cell.hazards.find(x => x.id === h.hazardKey);
+            if (found) val = found.rate;
+          }
+          const pct = (val / 1e6) * 100;
+          const oneIn = val > 0 ? Math.round(1e6 / val) : null;
+          return `${fmtMortality(val)} deaths/M/yr` +
+            (val > 0 ? `  (${pct.toFixed(4)}%/yr, 1 in ${oneIn?.toLocaleString()})` : '');
+        },
+        description: `Probability of dying from ${h.label.toLowerCase()} in this location, per year.\nBright = safe. Dark = dangerous.`,
+        whoIsThisFor: h.who,
+        unitDescription: h.src,
+        source: 'See above',
+        sourceUrl: 'https://public.emdat.be/',
+        hoverLabel: h.label.replace(/s$/, ''),
+        defaultCurve: LINEAR_UP,
+        staticYear: 2023,
+        infoWidth: 320,
+        infoHeight: 220,
+      };
+    }
+    return out;
+  })(),
   inet: {
     label: 'Connectivity',
     dataMin: 0,
@@ -890,7 +1016,9 @@ const AXES: Record<string, AxisConfig> = {
 
 const AXIS_IDS = Object.keys(AXES);
 const ENERGY_SUB_IDS = ['e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke', 'e_hydro', 'e_wind', 'e_solar', 'e_geo'];
-const MAIN_AXIS_IDS = AXIS_IDS.filter((id) => !ENERGY_SUB_IDS.includes(id));
+const HAZARD_SUB_IDS = ['eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought', 'wildfire', 'landslide'];
+const SUBMENU_IDS = new Set([...ENERGY_SUB_IDS, ...HAZARD_SUB_IDS]);
+const MAIN_AXIS_IDS = AXIS_IDS.filter((id) => !SUBMENU_IDS.has(id));
 
 const HOTKEYS: Record<string, string> = {
   temp: 't',
@@ -922,10 +1050,11 @@ const HOTKEYS: Record<string, string> = {
   e_wind: '7',
   e_solar: '8',
   e_geo: '9',
+  eq: '0',
 };
 
 const AXIS_OPTIONS: AxisOption[] = Object.entries(AXES)
-  .filter(([id]) => !ENERGY_SUB_IDS.includes(id))
+  .filter(([id]) => !SUBMENU_IDS.has(id))
   .map(([id, a]) => ({
     id,
     label: a.label,
@@ -936,7 +1065,7 @@ const AXIS_OPTIONS: AxisOption[] = Object.entries(AXES)
     sourceUrl: a.sourceUrl,
   }));
 
-const ENERGY_SUB_OPTIONS: AxisOption[] = ENERGY_SUB_IDS.map((id) => {
+function _toAxisOption(id: string): AxisOption {
   const a = AXES[id];
   return {
     id,
@@ -947,7 +1076,9 @@ const ENERGY_SUB_OPTIONS: AxisOption[] = ENERGY_SUB_IDS.map((id) => {
     source: a.source,
     sourceUrl: a.sourceUrl,
   };
-});
+}
+const ENERGY_SUB_OPTIONS: AxisOption[] = ENERGY_SUB_IDS.map(_toAxisOption);
+const HAZARD_SUB_OPTIONS: AxisOption[] = HAZARD_SUB_IDS.map(_toAxisOption);
 
 type FreeScores = Record<string, Record<string, {
   composite: number;
@@ -1534,7 +1665,7 @@ export default function App() {
           // back to the axis default. Without this lookup the hover label
           // always rendered in the axis's static default unit.
           const userUnit = unitStatesRef.current[axId] ?? ax.unit;
-          text = `${label}: ${fmt(hv.rawNorm, userUnit)}`;
+          text = `${label}: ${fmt(hv.rawNorm, userUnit, lat, lng)}`;
         }
       } else {
         text = `${Math.round(hv.rawNorm * 100)}%`;
@@ -1797,6 +1928,7 @@ export default function App() {
       <TopBar
         axes={AXIS_OPTIONS}
         energySubAxes={ENERGY_SUB_OPTIONS}
+        hazardSubAxes={HAZARD_SUB_OPTIONS}
         activeAxisId={activeAxis}
         onAxisChange={handleAxisChange}
         formula={formula}

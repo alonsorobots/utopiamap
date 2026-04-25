@@ -14,6 +14,7 @@ export interface AxisOption {
 interface TopBarProps {
   axes: AxisOption[];
   energySubAxes?: AxisOption[];
+  hazardSubAxes?: AxisOption[];
   activeAxisId: string;
   onAxisChange: (id: string) => void;
   formula: string;
@@ -163,11 +164,11 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
 
 // ── TopBar ───────────────────────────────────────────────────────────
 
-export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
+export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
-  const [subMenuOpen, setSubMenuOpen] = useState(false);
+  const [openSubMenu, setOpenSubMenu] = useState<string | null>(null);
   const [hoveredAxis, setHoveredAxis] = useState<AxisOption | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subMenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,7 +180,7 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
     const close = (e: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
-        setSubMenuOpen(false);
+        setOpenSubMenu(null);
       }
     };
     window.addEventListener('pointerdown', close);
@@ -189,7 +190,7 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
   useEffect(() => {
     if (!menuOpen) {
       setHoveredAxis(null);
-      setSubMenuOpen(false);
+      setOpenSubMenu(null);
       if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
       if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
     }
@@ -212,7 +213,7 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
     // want it to stay open (otherwise it dismisses itself on entry).
     if (!isSubmenuItem) {
       if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
-      setSubMenuOpen(false);
+      setOpenSubMenu(null);
     }
   }, []);
 
@@ -221,16 +222,16 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
     setHoveredAxis(null);
   }, []);
 
-  const onMoreEnter = useCallback(() => {
+  const onMoreEnter = useCallback((key: string) => {
     if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
     setHoveredAxis(null);
     if (subMenuTimer.current) clearTimeout(subMenuTimer.current);
-    subMenuTimer.current = setTimeout(() => setSubMenuOpen(true), 150);
+    subMenuTimer.current = setTimeout(() => setOpenSubMenu(key), 150);
   }, []);
 
   const onMoreLeave = useCallback(() => {
     if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
-    setSubMenuOpen(false);
+    setOpenSubMenu(null);
   }, []);
 
   return (
@@ -257,37 +258,43 @@ export function TopBar({ axes, energySubAxes, activeAxisId, onAxisChange, formul
                   </span>
                 </button>
               ))}
-              {energySubAxes && energySubAxes.length > 0 && (
-                <div
-                  className="axis-more-wrapper"
-                  onMouseEnter={onMoreEnter}
-                  onMouseLeave={onMoreLeave}
-                >
-                  <div className="axis-menu-item axis-more-trigger">
-                    <span>more ...</span>
-                    <span className="axis-menu-right" style={{ fontSize: 11 }}>&#9654;</span>
-                  </div>
-                  {subMenuOpen && (
-                    <div className="axis-menu axis-submenu">
-                      {energySubAxes.map((a) => (
-                        <button
-                          key={a.id}
-                          className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
-                          onClick={() => { onAxisChange(a.id); setMenuOpen(false); setSubMenuOpen(false); }}
-                          onMouseEnter={() => onMenuItemEnter(a, true)}
-                          onMouseLeave={onMenuItemLeave}
-                        >
-                          <span>{a.label}</span>
-                          <span className="axis-menu-right">
-                            <span className="axis-menu-hint">{a.id}</span>
-                            {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
-                          </span>
-                        </button>
-                      ))}
+              {([
+                { key: 'energy', label: 'Energy ...', items: energySubAxes },
+                { key: 'hazards', label: 'Natural Hazards ...', items: hazardSubAxes },
+              ] as { key: string; label: string; items?: AxisOption[] }[])
+                .filter((g) => g.items && g.items.length > 0)
+                .map((group) => (
+                  <div
+                    key={group.key}
+                    className="axis-more-wrapper"
+                    onMouseEnter={() => onMoreEnter(group.key)}
+                    onMouseLeave={onMoreLeave}
+                  >
+                    <div className="axis-menu-item axis-more-trigger">
+                      <span>{group.label}</span>
+                      <span className="axis-menu-right" style={{ fontSize: 11 }}>&#9654;</span>
                     </div>
-                  )}
-                </div>
-              )}
+                    {openSubMenu === group.key && (
+                      <div className="axis-menu axis-submenu">
+                        {group.items!.map((a) => (
+                          <button
+                            key={a.id}
+                            className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
+                            onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                            onMouseEnter={() => onMenuItemEnter(a, true)}
+                            onMouseLeave={onMenuItemLeave}
+                          >
+                            <span>{a.label}</span>
+                            <span className="axis-menu-right">
+                              <span className="axis-menu-hint">{a.id}</span>
+                              {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
             </div>
           )}
         </div>

@@ -1005,19 +1005,76 @@ def process_gdp():
     return out
 
 
-def process_risk():
-    """Multi-hazard composite risk -> risk.pmtiles
+def _ensure_disaster_rasters() -> Path:
+    """Ensure data/Hazard/_out/{hazard}_mortality.tif files exist.
 
-    Combines pixel-level data:
-      1. GEM seismic PGA (v2023.1, ~5 km) -- earthquake risk
-      2. JRC river flood inundation depth (100yr return, ~1 km) -- flood risk
-      3. Low-elevation coastal zone (from ETOPO) -- sea-level-rise risk
-      4. Steep slopes (from ETOPO) -- landslide risk
-    Each component is normalized 0-1, then combined as max(components).
-    Final output: 0 = lowest risk, 100 = highest risk.
-
-    Falls back to INFORM country-level if GEM data not found.
+    Runs process_disasters.main() if missing. Returns the _out directory.
     """
+    out_dir = DATA / "Hazard" / "_out"
+    needed = ["risk_mortality.tif"] + [f"{h}_mortality.tif" for h in (
+        "earthquake", "flood", "cyclone", "tsunami",
+        "volcano", "drought", "wildfire", "landslide",
+    )]
+    if all((out_dir / n).exists() for n in needed):
+        return out_dir
+    print("\n[disaster pipeline] Building per-hazard mortality rasters ...")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import process_disasters as pd_mod
+    pd_mod.main()
+    return out_dir
+
+
+def _make_disaster_processor(axis_id: str, src_name: str, *, hover_label: str,
+                              composite: bool = False):
+    """Build a process_<hazard>() that emits {axis_id}.pmtiles from
+    data/Hazard/_out/{src_name}.tif (already-calibrated deaths/M/yr raster).
+
+    Display: Bright = SAFE (low mortality). Inverted color, log-ish stretch
+    via clip + sqrt for headroom in low values. Hover values come from
+    public/risk_lookup.json so the heatmap can stay perceptually balanced.
+    """
+    def _proc():
+        label = "DISASTER MORTALITY" if composite else f"HAZARD MORTALITY"
+        print(f"\n=== {label}: {axis_id} ===")
+        out_dir = _ensure_disaster_rasters()
+        src = out_dir / f"{src_name}.tif"
+        if not src.exists():
+            print(f"  ERROR: {src} not found")
+            return None
+
+        # Apply sqrt stretch to give low-mortality places visible color while
+        # not saturating Haiti/Dhaka. Cap at COMPOSITE_DISPLAY_MAX = 200 deaths/M/yr.
+        work_dir = TILES / axis_id
+        ensure_dir(work_dir)
+        stretched = work_dir / f"{axis_id}_stretched.tif"
+        with rasterio.open(src) as ds:
+            arr = ds.read(1).astype(np.float32)
+            profile = ds.profile.copy()
+        cap = 200.0
+        arr = np.clip(arr, 0, cap)
+        # gamma compression for visibility: y = (x/cap)^0.4 * cap
+        with np.errstate(invalid="ignore"):
+            arr = np.power(arr / cap, 0.4) * cap
+        profile.update(dtype="float32", nodata=-9999, compress="deflate")
+        with rasterio.open(stretched, "w", **profile) as dst:
+            dst.write(arr.astype(np.float32), 1)
+        out = full_pipeline(stretched, axis_id, data_min=0, data_max=cap,
+                            invert=True, nodata_val=-9999)
+        stretched.unlink(missing_ok=True)
+        return out
+    _proc.__name__ = f"process_{axis_id}"
+    return _proc
+
+
+def process_risk():
+    """Composite natural disaster mortality (deaths/M/yr) -> risk.pmtiles."""
+    return _make_disaster_processor("risk", "risk_mortality",
+                                    hover_label="Disaster",
+                                    composite=True)()
+
+
+def _legacy_process_risk():
+    """LEGACY: prior multi-hazard composite (intensity-only, qualitative)."""
     print("\n=== HAZARD RISK (Multi-hazard composite) ===")
 
     gem_path = DATA / "Hazard" / "v2023_1_pga_475_rock_3min.tif"
@@ -2661,6 +2718,19 @@ PROCESSORS = {
 
 for _aid, (_fuels, _label, _dmax) in FUEL_AXES.items():
     PROCESSORS[_aid] = _make_fuel_processor(_aid, _fuels, _label, _dmax)
+
+# Individual hazards (mortality in deaths/M/yr, calibrated by EM-DAT)
+for _hid, _src in (
+    ("eq",        "earthquake_mortality"),
+    ("flood",     "flood_mortality"),
+    ("cyclone",   "cyclone_mortality"),
+    ("tsunami",   "tsunami_mortality"),
+    ("volcano",   "volcano_mortality"),
+    ("drought",   "drought_mortality"),
+    ("wildfire",  "wildfire_mortality"),
+    ("landslide", "landslide_mortality"),
+):
+    PROCESSORS[_hid] = _make_disaster_processor(_hid, _src, hover_label=_hid.title())
 
 
 def main():

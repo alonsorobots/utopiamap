@@ -11,7 +11,7 @@ export interface AxisConfig {
   dataMax: number;
   unit: string;
   formatValue: (normX: number, unit: string) => string;
-  formatHover?: (normX: number, unit: string) => string;
+  formatHover?: (normX: number, unit: string, lat?: number, lng?: number) => string;
   unitOptions?: string[];
   description?: string;
   whoIsThisFor?: string;

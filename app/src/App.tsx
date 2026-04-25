@@ -18,6 +18,7 @@ import {
   importPaintedMask,
 } from './heatmapLayer';
 import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getCatalog, getTilesBase } from './tileDataLoader';
+import { tokenize as tokenizeFormula } from './formulaParser';
 import type { FormulaError, PaintedMask } from './heatmapLayer';
 import { CurveEditor } from './CurveEditor';
 import type { AxisConfig, CurvePoint } from './CurveEditor';
@@ -1200,6 +1201,8 @@ export default function App() {
 
   const activeAxisRef = useRef(activeAxis);
   activeAxisRef.current = activeAxis;
+  const formulaRef = useRef(formula);
+  formulaRef.current = formula;
   const lastMapPointRef = useRef<{ lng: number; lat: number; px: number; py: number } | null>(null);
 
   // When switching axes, the previously selected year may not exist for the
@@ -1221,12 +1224,28 @@ export default function App() {
     timePanelRef.current?.jumpToYear(best);
   }, []);
 
+  // True when the formula bar holds exactly one axis identifier and
+  // nothing else. In that case picking a new axis (menu, hotkey, arrow
+  // keys) should also rewrite the formula -- otherwise the lone axis
+  // in the formula keeps overriding the user's selection. Anything more
+  // complex (operators, numbers, parens, multiple idents) is treated as
+  // an authored formula and left untouched.
+  const isSingleAxisFormula = useCallback((f: string): boolean => {
+    const toks = tokenizeFormula(f).filter(t => t.type !== 'space');
+    return toks.length === 1 && toks[0].type === 'ident';
+  }, []);
+
   const handleAxisChange = useCallback((axisId: string) => {
     setActiveAxis(axisId);
     setHeatmapActiveAxis(axisId);
+    if (isSingleAxisFormula(formulaRef.current)) {
+      setFormula(axisId);
+      const err = setHeatmapFormula(axisId);
+      setFormulaError(err ? err.message : null);
+    }
     snapYearToAxis(axisId);
     mapRef.current?.triggerRepaint();
-  }, [snapYearToAxis]);
+  }, [snapYearToAxis, isSingleAxisFormula]);
 
   const stepAxis = useCallback((dir: 1 | -1) => {
     setActiveAxis((prev) => {
@@ -1234,11 +1253,16 @@ export default function App() {
       if (idx < 0) return prev;
       const next = MAIN_AXIS_IDS[(idx + dir + MAIN_AXIS_IDS.length) % MAIN_AXIS_IDS.length];
       setHeatmapActiveAxis(next);
+      if (isSingleAxisFormula(formulaRef.current)) {
+        setFormula(next);
+        const err = setHeatmapFormula(next);
+        setFormulaError(err ? err.message : null);
+      }
       snapYearToAxis(next);
       mapRef.current?.triggerRepaint();
       return next;
     });
-  }, [snapYearToAxis]);
+  }, [snapYearToAxis, isSingleAxisFormula]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1260,6 +1284,22 @@ export default function App() {
 
       if (e.key === 'ArrowLeft') { e.stopPropagation(); e.preventDefault(); stepAxis(-1); return; }
       if (e.key === 'ArrowRight') { e.stopPropagation(); e.preventDefault(); stepAxis(1); return; }
+      // Up/Down are reserved for the timeline. We always preventDefault so
+      // MapLibre never falls back to its own pan-up/pan-down behavior, even
+      // for axes that aren't temporal -- in that case it just becomes a
+      // no-op rather than panning the map. Up = forward in time, Down = back.
+      if (e.key === 'ArrowUp') {
+        e.stopPropagation();
+        e.preventDefault();
+        if (isAxisTemporal(activeAxisRef.current)) timePanelRef.current?.stepYear(1);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.stopPropagation();
+        e.preventDefault();
+        if (isAxisTemporal(activeAxisRef.current)) timePanelRef.current?.stepYear(-1);
+        return;
+      }
       if (e.key === ' ') { e.preventDefault(); if (isAxisTemporal(activeAxisRef.current)) timePanelRef.current?.togglePlay(); return; }
       if (e.key === 'Home') {
         e.preventDefault();

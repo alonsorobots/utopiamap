@@ -23,6 +23,8 @@ interface TimePanelProps {
 export interface TimePanelHandle {
   togglePlay: () => void;
   jumpToYear: (y: number) => void;
+  /** Move one tick forward (+1) or backward (-1) through the data years. */
+  stepYear: (dir: 1 | -1) => void;
 }
 
 export const TimePanel = forwardRef<TimePanelHandle, TimePanelProps>(
@@ -144,7 +146,33 @@ export const TimePanel = forwardRef<TimePanelHandle, TimePanelProps>(
     setYearAndNotify(y);
   }, [disabled, setYearAndNotify]);
 
-  useImperativeHandle(ref, () => ({ togglePlay, jumpToYear }), [togglePlay, jumpToYear]);
+  // Step to the next/previous data year. Falls back to +/-1y when there's
+  // no explicit dataYears list. Pauses playback first so the manual step
+  // is the next thing that lands.
+  const stepYear = useCallback((dir: 1 | -1) => {
+    if (disabled) return;
+    setPlaying(false);
+    const cur = yearRef.current;
+    let next: number;
+    if (dataYears && dataYears.length > 0) {
+      if (dir > 0) {
+        const found = dataYears.find(y => y > cur);
+        next = found ?? cur;
+      } else {
+        let found = cur;
+        for (const y of dataYears) {
+          if (y < cur) found = y;
+          else break;
+        }
+        next = found;
+      }
+    } else {
+      next = cur + dir;
+    }
+    setYearAndNotify(next);
+  }, [disabled, dataYears, setYearAndNotify]);
+
+  useImperativeHandle(ref, () => ({ togglePlay, jumpToYear, stepYear }), [togglePlay, jumpToYear, stepYear]);
 
   const yearFromClientX = useCallback((clientX: number) => {
     const track = trackRef.current;

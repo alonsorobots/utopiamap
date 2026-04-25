@@ -120,9 +120,9 @@ const HAZARD_LABELS: Record<string, string> = {
 function fmtOddsPerYear(v: number): string {
   if (v <= 0) return '~0';
   const oneIn = Math.round(1e6 / v);
-  if (oneIn >= 1_000_000) return `1 in ${(oneIn / 1_000_000).toFixed(1)}M / yr`;
-  if (oneIn >= 1000) return `1 in ${Math.round(oneIn / 1000)}k / yr`;
-  return `1 in ${oneIn.toLocaleString()} / yr`;
+  if (oneIn >= 1_000_000) return `1 in ${(oneIn / 1_000_000).toFixed(1)} million per year`;
+  if (oneIn >= 1000) return `1 in ${Math.round(oneIn / 1000)} thousand per year`;
+  return `1 in ${oneIn.toLocaleString()} per year`;
 }
 function riskCellAt(lat: number, lng: number): {
   composite: number;                    // deaths/M/yr at this cell (composite)
@@ -760,14 +760,14 @@ const AXES: Record<string, AxisConfig> = {
     dataMin: 0,
     dataMax: 200,                    // deaths per million per year, capped for color
     unit: '/M/yr',
-    formatValue: (norm) => `${(norm * 200).toFixed(0)} d/M/yr`,
+    formatValue: (norm) => `${(norm * 200).toFixed(0)} deaths per million per year`,
     formatHover: (norm, _u, lat, lng) => {
       void loadRiskLookup();
       const cell = (lat !== undefined && lng !== undefined) ? riskCellAt(lat, lng) : null;
       const total = cell ? cell.composite : norm * 200;
       const headline = total > 0
-        ? `${fmtMortality(total)} d/M/yr  (${fmtOddsPerYear(total)})`
-        : `${fmtMortality(total)} d/M/yr`;
+        ? `${fmtMortality(total)} deaths per million per year  (${fmtOddsPerYear(total)})`
+        : `${fmtMortality(total)} deaths per million per year`;
       if (!cell) return headline;
       const lines = cell.hazards
         .filter(h => h.rate >= 0.05)
@@ -778,7 +778,7 @@ const AXES: Record<string, AxisConfig> = {
     },
     description: 'Annual chance of dying from a natural disaster.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
     whoIsThisFor: 'Homebuyers and anyone weighing earthquake, flood, cyclone, tsunami, volcanic, drought, wildfire, and landslide exposure.',
-    unitDescription: 'Deaths per million people per year. Reference: traffic ~120, heart disease ~2,000, all causes ~8,000 d/M/yr.',
+    unitDescription: 'Deaths per million people per year. Reference: traffic ~120, heart disease ~2,000, all causes ~8,000 deaths per million per year.',
     source: 'See sources panel',
     sources: [
       { name: 'EM-DAT (mortality, 1980-2020)', url: 'https://public.emdat.be/' },
@@ -1000,7 +1000,7 @@ const AXES: Record<string, AxisConfig> = {
           const band = h.band(intensity);
           const head = `${native} (${band})`;
           if (mortality != null && mortality >= 0.05) {
-            return `${head}\n  ${fmtMortality(mortality)} d/M/yr  (${fmtOddsPerYear(mortality)})`;
+            return `${head}\n  ${fmtMortality(mortality)} deaths per million per year  (${fmtOddsPerYear(mortality)})`;
           }
           return head;
         },

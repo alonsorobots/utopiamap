@@ -252,8 +252,8 @@ const AXES: Record<string, AxisConfig> = {
     sourceUrl: 'https://www.climatologylab.org/terraclimate.html',
     hoverLabel: 'Precip.',
     defaultCurve: [
-      { x: 0,                y: 0 },
-      { x: 550 / 3000,       y: 1 },
+      { x: 150 / 3000,       y: 0 },
+      { x: 900 / 3000,       y: 1 },
     ],
     infoWidth: 304,
     infoHeight: 185

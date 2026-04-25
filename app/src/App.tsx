@@ -85,10 +85,13 @@ const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy', 'depv', 'e_consum
 // hazard axes (eq, flood, cyclone, tsunami, volcano, drought, wildfire,
 // landslide).
 type RiskLookup = {
+  v?: number;
   res: number;          // degrees per cell
   w: number;            // grid width
   h: number;            // grid height
-  hazards: { id: string; values: number[] }[];  // values are deaths/M/yr × 10
+  hazards: { id: string; values: number[]; intensity?: number[] }[];
+  // values    = mortality × 10 (deaths/M/yr × 10)
+  // intensity = native physical units (PGA in g, depth in m, wind m/s, ...)
   composite: number[];  // composite, deaths/M/yr × 10
 };
 let riskLookupCache: RiskLookup | null = null;
@@ -123,7 +126,7 @@ function fmtOddsPerYear(v: number): string {
 }
 function riskCellAt(lat: number, lng: number): {
   composite: number;                    // deaths/M/yr at this cell (composite)
-  hazards: { id: string; rate: number }[];
+  hazards: { id: string; rate: number; intensity?: number }[];
 } | null {
   const lk = riskLookupCache;
   if (!lk) return null;
@@ -134,8 +137,24 @@ function riskCellAt(lat: number, lng: number): {
   const iy = Math.max(0, Math.min(lk.h - 1, Math.floor((90 - lat) / lk.res)));
   const idx = iy * lk.w + ix;
   const composite = (lk.composite[idx] || 0) / 10;
-  const hazards = lk.hazards.map(h => ({ id: h.id, rate: (h.values[idx] || 0) / 10 }));
+  const hazards = lk.hazards.map(h => ({
+    id: h.id,
+    rate: (h.values[idx] || 0) / 10,
+    intensity: h.intensity ? h.intensity[idx] : undefined,
+  }));
   return { composite, hazards };
+}
+function intensityAt(hazardKey: string, lat: number, lng: number): number | null {
+  const cell = riskCellAt(lat, lng);
+  if (!cell) return null;
+  const found = cell.hazards.find(h => h.id === hazardKey);
+  return found && typeof found.intensity === 'number' ? found.intensity : null;
+}
+function mortalityAt(hazardKey: string, lat: number, lng: number): number | null {
+  const cell = riskCellAt(lat, lng);
+  if (!cell) return null;
+  const found = cell.hazards.find(h => h.id === hazardKey);
+  return found ? found.rate : null;
 }
 function fmtMortality(v: number): string {
   if (v <= 0) return '<0.05';
@@ -779,90 +798,218 @@ const AXES: Record<string, AxisConfig> = {
     infoHeight: 184
   },
   ...((): Record<string, AxisConfig> => {
-    const HAZ_DEF: { id: string; key: string; label: string; hazardKey: string; who: string; desc: string; sources: { name: string; url?: string }[] }[] = [
-      { id: 'eq', key: 'earthquake', label: 'Earthquakes', hazardKey: 'earthquake',
-        who: 'Anyone weighing seismic exposure (Pacific Rim, Himalaya, Andes, East Africa Rift).',
-        desc: 'Annual chance of dying from an earthquake.\nBright = safe. Dark = dangerous.',
+    // Each hazard renders the raw physical intensity from
+    // _out/{hazard}_intensity.tif into pmtiles, with display cap = dataMax
+    // and a known transform (must mirror build_tiles.py). The display value
+    // is recovered by inverting the transform; for hover, when the lookup
+    // is loaded, we use the exact stored intensity instead.
+    type HazSpec = {
+      id: string; hazardKey: string; label: string; hoverLabel: string;
+      who: string; desc: string;
+      sources: { name: string; url?: string }[];
+      // pmtiles encoding (mirror build_tiles.py)
+      dataMax: number;
+      transform: 'linear' | 'sqrt' | 'gamma';
+      gamma?: number;
+      // native unit
+      unit: string;
+      unitOptions?: string[];
+      formatNative: (intensity: number, unit: string) => string;
+      band: (intensity: number) => string;
+      unitDescription: string;
+    };
+    const invertTransform = (norm: number, max: number, t: 'linear'|'sqrt'|'gamma', gamma = 1) => {
+      const n = Math.max(0, Math.min(1, norm));
+      if (t === 'linear') return n * max;
+      if (t === 'sqrt')   return n * n * max;
+      return Math.pow(n, 1 / gamma) * max;
+    };
+    const HAZ_DEF: HazSpec[] = [
+      {
+        id: 'eq', hazardKey: 'earthquake', label: 'Earthquakes', hoverLabel: 'PGA',
+        who: 'Anyone weighing seismic exposure (Pacific Rim, Himalaya, Andes, East African Rift).',
+        desc: 'Peak Ground Acceleration with a 1-in-475-year return period.\nBright = stable. Dark = severe shaking.',
         sources: [
           { name: 'GEM Global Seismic Hazard Map v2023.1 (PGA, 475-yr)', url: 'https://maps.openquake.org/map/global-seismic-hazard-map/' },
-          { name: 'EM-DAT country deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
-      { id: 'flood', key: 'flood', label: 'River Floods', hazardKey: 'flood',
+        ],
+        dataMax: 1.5, transform: 'gamma', gamma: 0.55,
+        unit: 'g',
+        formatNative: (g) => `${g.toFixed(2)}g`,
+        band: (g) => g < 0.04 ? 'Negligible'
+                   : g < 0.10 ? 'Minor'
+                   : g < 0.20 ? 'Moderate'
+                   : g < 0.40 ? 'Strong'
+                   : g < 0.80 ? 'Severe'
+                              : 'Extreme',
+        unitDescription: '"g" = peak ground acceleration as a fraction of gravity at the 1-in-475-year level. 0.1g = light shaking, 0.4g = strong, 1g = ground briefly moves as fast as falling.'
+      },
+      {
+        id: 'flood', hazardKey: 'flood', label: 'River Floods', hoverLabel: 'Depth',
         who: 'Anyone near rivers, deltas, or low-elevation watersheds.',
-        desc: 'Annual chance of dying from a river flood.\nBright = safe. Dark = dangerous.',
+        desc: 'Maximum river-flood depth at a 1-in-100-year event.\nBright = dry. Dark = deep flooding.',
         sources: [
-          { name: 'JRC GloFAS Global River Flood Hazard (RP100)', url: 'https://data.jrc.ec.europa.eu/dataset/jrc-floods-floodmapgl_rp50y-tif' },
-          { name: 'EM-DAT country deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
-      { id: 'cyclone', key: 'cyclone', label: 'Cyclones', hazardKey: 'cyclone',
+          { name: 'JRC Global River Flood Hazard, RP100 (m)', url: 'https://data.jrc.ec.europa.eu/dataset/jrc-floods-floodmapgl_rp50y-tif' },
+        ],
+        dataMax: 10.0, transform: 'sqrt',
+        unit: 'm',
+        formatNative: (m) => `${m.toFixed(1)} m`,
+        band: (m) => m < 0.1 ? 'Dry'
+                   : m < 0.5 ? 'Shallow'
+                   : m < 1.5 ? 'Knee-to-waist'
+                   : m < 3.0 ? 'Submerging'
+                              : 'Catastrophic',
+        unitDescription: 'Meters of water at a 1-in-100-year river flood. 0.5 m = ankle-deep, 1.5 m = waist, 3 m = first-floor submerged.'
+      },
+      {
+        id: 'cyclone', hazardKey: 'cyclone', label: 'Cyclones', hoverLabel: 'Wind',
         who: 'Anyone in tropical or subtropical coastal zones (hurricane, typhoon, cyclone).',
-        desc: 'Annual chance of dying from a tropical cyclone.\nBright = safe. Dark = dangerous.',
+        desc: 'Peak wind speed at a 1-in-100-year tropical cyclone.\nBright = calm. Dark = catastrophic winds.',
         sources: [
-          { name: 'Bloemendaal STORM 100-yr max wind (present climate)', url: 'https://data.4tu.nl/articles/dataset/STORM_climate_change_synthetic_tropical_cyclone_tracks/12706085' },
-          { name: 'EM-DAT cyclone deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
-      { id: 'tsunami', key: 'tsunami', label: 'Tsunami', hazardKey: 'tsunami',
+          { name: 'Bloemendaal STORM 100-yr max wind (present climate, m/s)', url: 'https://data.4tu.nl/articles/dataset/STORM_climate_change_synthetic_tropical_cyclone_tracks/12706085' },
+        ],
+        dataMax: 90.0, transform: 'gamma', gamma: 0.7,
+        unit: 'mph',
+        unitOptions: ['mph', 'm/s', 'km/h'],
+        formatNative: (ms, unit) => {
+          if (unit === 'm/s') return `${Math.round(ms)} m/s`;
+          if (unit === 'km/h') return `${Math.round(ms * 3.6)} km/h`;
+          return `${Math.round(ms * 2.23694)} mph`;
+        },
+        band: (ms) => {
+          const mph = ms * 2.23694;
+          if (mph < 39)  return 'No cyclone';
+          if (mph < 74)  return 'Tropical storm';
+          if (mph < 96)  return 'Cat 1';
+          if (mph < 111) return 'Cat 2';
+          if (mph < 130) return 'Cat 3';
+          if (mph < 157) return 'Cat 4';
+          return 'Cat 5';
+        },
+        unitDescription: 'Peak sustained 10-minute wind at a 1-in-100-year cyclone. 74 mph = hurricane threshold; 157 mph = Cat 5.'
+      },
+      {
+        id: 'tsunami', hazardKey: 'tsunami', label: 'Tsunami', hoverLabel: 'Runup',
         who: 'Anyone within ~30 km of a coastline near a subduction zone.',
-        desc: 'Annual chance of dying from a tsunami.\nBright = safe. Dark = dangerous.',
+        desc: 'Coastal wave runup at a 1-in-500-year tsunami.\nBright = safe. Dark = inundating waves.',
         sources: [
-          { name: 'Davies et al. 2017 Global PTHA (1/500-yr coastal runup)', url: 'https://nhess.copernicus.org/articles/18/3105/2018/' },
-          { name: 'Long-term global tsunami fatality budget (~1,500/yr)' },
-        ] },
-      { id: 'volcano', key: 'volcano', label: 'Volcanoes', hazardKey: 'volcano',
+          { name: 'Davies et al. 2017 Global PTHA (1/500-yr coastal runup, m)', url: 'https://nhess.copernicus.org/articles/18/3105/2018/' },
+        ],
+        dataMax: 10.0, transform: 'sqrt',
+        unit: 'm',
+        formatNative: (m) => `${m.toFixed(1)} m`,
+        band: (m) => m < 0.1 ? 'Negligible'
+                   : m < 0.5 ? 'Minor'
+                   : m < 2.0 ? 'Inundating'
+                   : m < 5.0 ? 'Severe'
+                              : 'Catastrophic',
+        unitDescription: 'Maximum wave runup at a 1-in-500-year tsunami. 2 m floods low-lying coasts; 5 m destroys most coastal structures.'
+      },
+      {
+        id: 'volcano', hazardKey: 'volcano', label: 'Volcanoes', hoverLabel: 'Exposure',
         who: 'Anyone within ~30 km of a Holocene volcano with recent activity.',
-        desc: 'Annual chance of dying from a volcanic eruption.\nBright = safe. Dark = dangerous.',
+        desc: 'Proximity to active Holocene volcanoes, weighted by recent eruptions.\nBright = far from any. Dark = dense volcanic clusters.',
         sources: [
           { name: 'Smithsonian Global Volcanism Program (Holocene volcanoes)', url: 'https://volcano.si.edu/list_volcano_holocene.cfm' },
-          { name: 'EM-DAT volcano deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
-      { id: 'drought', key: 'drought', label: 'Droughts', hazardKey: 'drought',
-        who: 'Anyone in arid or semi-arid agricultural regions where droughts cause famine.',
-        desc: 'Annual chance of dying from drought-driven famine.\nBright = safe. Dark = dangerous.',
+        ],
+        dataMax: 8.0, transform: 'gamma', gamma: 0.4,
+        unit: 'score',
+        formatNative: (s) => `${s.toFixed(1)} score`,
+        band: (s) => s < 0.05 ? 'None'
+                   : s < 0.3  ? 'Distant'
+                   : s < 1.0  ? 'Nearby'
+                   : s < 3.0  ? 'Active zone'
+                              : 'Volcanic cluster',
+        unitDescription: 'Gaussian-smoothed exposure score (sigma ~25 km), with recent eruptions weighted 3x. Higher = more (and more recently active) volcanoes within ~50 km.'
+      },
+      {
+        id: 'drought', hazardKey: 'drought', label: 'Droughts', hoverLabel: 'Drought',
+        who: 'Anyone in arid or semi-arid agricultural regions where prolonged dry spells cause famine.',
+        desc: 'Fraction of months in severe drought (SPEI-12 < -1.5).\nBright = wet. Dark = chronically dry.',
         sources: [
           { name: 'SPEI-12 severe-drought frequency (1980-2006)', url: 'https://spei.csic.es/database.html' },
-          { name: 'EM-DAT drought deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
-      { id: 'wildfire', key: 'wildfire', label: 'Wildfires', hazardKey: 'wildfire',
+        ],
+        dataMax: 0.5, transform: 'linear',
+        unit: '% months',
+        formatNative: (f) => `${(f * 100).toFixed(1)}% months`,
+        band: (f) => f < 0.02 ? 'Wet'
+                   : f < 0.05 ? 'Mild'
+                   : f < 0.10 ? 'Common'
+                   : f < 0.20 ? 'Persistent'
+                              : 'Chronic',
+        unitDescription: 'Share of months between 1980-2006 in severe drought (SPEI-12 below -1.5). 5% = 1 in 20 months; 20% = 1 in 5.'
+      },
+      {
+        id: 'wildfire', hazardKey: 'wildfire', label: 'Wildfires', hoverLabel: 'Fire risk',
         who: 'Anyone in fire-prone climates (Mediterranean, western US, southern Australia).',
-        desc: 'Annual chance of direct death from wildfire.\nBright = safe. Dark = dangerous.\nSmoke health effects not included.',
+        desc: 'Fire-conducive months (drought + fuel proxy).\nBright = low fire risk. Dark = chronic fire weather.',
         sources: [
-          { name: 'Drought-frequency proxy (SPEI-12)', url: 'https://spei.csic.es/database.html' },
-          { name: 'EM-DAT wildfire deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
-      { id: 'landslide', key: 'landslide', label: 'Landslides', hazardKey: 'landslide',
+          { name: 'SPEI-12 drought-frequency proxy (vegetation-capped)', url: 'https://spei.csic.es/database.html' },
+        ],
+        dataMax: 0.4, transform: 'linear',
+        unit: '% months',
+        formatNative: (f) => `${(f * 100).toFixed(1)}% months`,
+        band: (f) => f < 0.02 ? 'Negligible'
+                   : f < 0.05 ? 'Low'
+                   : f < 0.10 ? 'Moderate'
+                   : f < 0.20 ? 'High'
+                              : 'Extreme',
+        unitDescription: 'Share of months with drought-driven fire-prone weather, capped where there is no fuel (deserts).'
+      },
+      {
+        id: 'landslide', hazardKey: 'landslide', label: 'Landslides', hoverLabel: 'Slope',
         who: 'Anyone living below steep slopes in heavy-rain regions.',
-        desc: 'Annual chance of dying from a landslide or mass movement.\nBright = safe. Dark = dangerous.',
+        desc: 'Terrain slope from ETOPO global relief.\nBright = flat. Dark = steep.',
         sources: [
-          { name: 'ETOPO 2022 Global Relief (slope)', url: 'https://www.ncei.noaa.gov/products/etopo-global-relief-model' },
-          { name: 'EM-DAT mass-movement deaths 1980-2020', url: 'https://public.emdat.be/' },
-        ] },
+          { name: 'ETOPO 2022 Global Relief (5 km slope)', url: 'https://www.ncei.noaa.gov/products/etopo-global-relief-model' },
+        ],
+        dataMax: 45.0, transform: 'linear',
+        unit: '°',
+        formatNative: (deg) => `${deg.toFixed(1)}°`,
+        band: (deg) => deg < 1   ? 'Flat'
+                     : deg < 5   ? 'Gentle'
+                     : deg < 15  ? 'Hilly'
+                     : deg < 30  ? 'Steep'
+                                  : 'Cliff-like',
+        unitDescription: 'Average slope at the 5 km cell. 5° = gentle hill, 15° = ski-slope blue, 30° = ski-slope black diamond.'
+      },
     ];
     const out: Record<string, AxisConfig> = {};
     for (const h of HAZ_DEF) {
       out[h.id] = {
         label: h.label,
         dataMin: 0,
-        dataMax: 200,
-        unit: '/M/yr',
-        formatValue: (norm) => `${(norm * 200).toFixed(0)} d/M/yr`,
-        formatHover: (norm, _u, lat, lng) => {
+        dataMax: h.dataMax,
+        unit: h.unit,
+        unitOptions: h.unitOptions,
+        formatValue: (norm, unit) => {
+          const v = invertTransform(norm, h.dataMax, h.transform, h.gamma);
+          return h.formatNative(v, unit);
+        },
+        formatHover: (norm, unit, lat, lng) => {
           void loadRiskLookup();
-          const cell = (lat !== undefined && lng !== undefined) ? riskCellAt(lat, lng) : null;
-          let val = norm * 200;
-          if (cell) {
-            const found = cell.hazards.find(x => x.id === h.hazardKey);
-            if (found) val = found.rate;
+          let intensity: number | null = null;
+          let mortality: number | null = null;
+          if (lat !== undefined && lng !== undefined) {
+            intensity = intensityAt(h.hazardKey, lat, lng);
+            mortality = mortalityAt(h.hazardKey, lat, lng);
           }
-          return val > 0
-            ? `${fmtMortality(val)} d/M/yr  (${fmtOddsPerYear(val)})`
-            : `${fmtMortality(val)} d/M/yr`;
+          if (intensity == null) {
+            intensity = invertTransform(norm, h.dataMax, h.transform, h.gamma);
+          }
+          const native = h.formatNative(intensity, unit);
+          const band = h.band(intensity);
+          const head = `${native} (${band})`;
+          if (mortality != null && mortality >= 0.05) {
+            return `${head}\n  ${fmtMortality(mortality)} d/M/yr  (${fmtOddsPerYear(mortality)})`;
+          }
+          return head;
         },
         description: h.desc,
         whoIsThisFor: h.who,
-        unitDescription: 'Deaths per million people per year. Reference: traffic ~120, heart disease ~2,000, all causes ~8,000 d/M/yr.',
+        unitDescription: h.unitDescription,
         source: 'See sources panel',
         sources: h.sources,
-        hoverLabel: h.label.replace(/s$/, ''),
+        hoverLabel: h.hoverLabel,
         defaultCurve: LINEAR_UP,
         staticYear: 2023,
         infoWidth: 311,

@@ -436,11 +436,18 @@ def hazard_wildfire(drought_freq: np.ndarray) -> np.ndarray:
 
 
 def hazard_landslide(elev_aligned: np.ndarray) -> np.ndarray:
-    """Slope from ETOPO at TARGET grid, m/m."""
+    """Slope from ETOPO at TARGET grid, expressed in degrees.
+
+    np.gradient returns dz per pixel-row. A pixel here is TARGET_RES * 111 km
+    along a meridian (~5.55 km at TARGET_RES=0.05). Convert to degrees.
+    """
     dy = np.gradient(elev_aligned, axis=0)
     dx = np.gradient(elev_aligned, axis=1)
-    slope = np.sqrt(dx**2 + dy**2)
-    return slope.astype(np.float32)
+    rise_per_pixel = np.sqrt(dx**2 + dy**2)
+    pixel_m = TARGET_RES * 111000.0  # meters per pixel along meridian
+    slope_rad = np.arctan(rise_per_pixel / pixel_m)
+    slope_deg = np.degrees(slope_rad).astype(np.float32)
+    return slope_deg
 
 
 def load_etopo_aligned() -> np.ndarray:
@@ -570,27 +577,40 @@ def apply_global_distribution(intensity: np.ndarray, total_deaths_per_year: floa
 # Main
 # ---------------------------------------------------------------------------
 
-def build_lookup_grid(hazard_rasters: dict[str, np.ndarray]) -> dict:
-    """Downsample each hazard raster to LOOKUP_RES and store as a flat list."""
+def _block_mean(arr: np.ndarray) -> np.ndarray:
+    sy = TARGET_H // LOOKUP_H
+    sx = TARGET_W // LOOKUP_W
+    h2 = arr[: LOOKUP_H * sy, : LOOKUP_W * sx]
+    return h2.reshape(LOOKUP_H, sy, LOOKUP_W, sx).mean(axis=(1, 3))
+
+
+def build_lookup_grid(hazard_rasters: dict[str, np.ndarray],
+                       intensity_rasters: dict[str, np.ndarray] | None = None) -> dict:
+    """Downsample each mortality raster (and optional intensity raster) to
+    LOOKUP_RES and store as a flat list. Mortality values are stored as
+    integers (deaths/M/yr * 10). Intensity values are stored as floats
+    (per-hazard native units, see HAZARD_UNITS in App.tsx)."""
     lookup = {
+        "v": 2,                              # bump format version
         "res": LOOKUP_RES,
         "w": LOOKUP_W,
         "h": LOOKUP_H,
-        "hazards": [],   # list of {"id":..., "values":[...]}
+        "hazards": [],                       # [{id, values, intensity?}]
         "composite": [],
     }
-    sy = TARGET_H // LOOKUP_H
-    sx = TARGET_W // LOOKUP_W
     composite = np.zeros((LOOKUP_H, LOOKUP_W), dtype=np.float32)
     for hid in HAZARDS:
         arr = hazard_rasters[hid]
-        # block-mean downsample
-        h2 = arr[: LOOKUP_H * sy, : LOOKUP_W * sx]
-        h2 = h2.reshape(LOOKUP_H, sy, LOOKUP_W, sx).mean(axis=(1, 3))
+        h2 = _block_mean(arr)
         composite += h2
-        # store as int (0.1 deaths/M/yr resolution -> int = value*10)
         ints = np.clip(np.round(h2 * 10).astype(np.int32), 0, 65000)
-        lookup["hazards"].append({"id": hid, "values": ints.flatten().tolist()})
+        entry: dict = {"id": hid, "values": ints.flatten().tolist()}
+        if intensity_rasters and hid in intensity_rasters:
+            i_lo = _block_mean(intensity_rasters[hid])
+            # 2 decimals is enough precision for all hazard units (PGA in g,
+            # depth in m, wind in m/s, etc.) and shrinks the JSON ~40%.
+            entry["intensity"] = [round(float(x), 2) for x in i_lo.flatten()]
+        lookup["hazards"].append(entry)
     composite_int = np.clip(np.round(composite * 10).astype(np.int32), 0, 65000)
     lookup["composite"] = composite_int.flatten().tolist()
     return lookup
@@ -663,9 +683,12 @@ def main():
     out_dir = ensure(HAZARD / "_out")
     for h in HAZARDS:
         write_raster(mortality[h], out_dir / f"{h}_mortality.tif")
+        # Save the raw intensity raster too so build_tiles.py can render
+        # per-hazard pmtiles in native units (PGA, depth, wind, etc.)
+        write_raster(hazards[h], out_dir / f"{h}_intensity.tif")
     write_raster(composite, out_dir / "risk_mortality.tif")
 
-    lookup = build_lookup_grid(mortality)
+    lookup = build_lookup_grid(mortality, intensity_rasters=hazards)
     lookup_path = ROOT / "app" / "public" / "risk_lookup.json"
     ensure(lookup_path.parent)
     with open(lookup_path, "w") as f:

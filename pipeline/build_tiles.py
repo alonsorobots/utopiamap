@@ -1006,18 +1006,19 @@ def process_gdp():
 
 
 def _ensure_disaster_rasters() -> Path:
-    """Ensure data/Hazard/_out/{hazard}_mortality.tif files exist.
+    """Ensure data/Hazard/_out/ has both mortality and intensity rasters.
 
-    Runs process_disasters.main() if missing. Returns the _out directory.
+    Runs process_disasters.main() if any are missing. Returns the _out dir.
     """
     out_dir = DATA / "Hazard" / "_out"
-    needed = ["risk_mortality.tif"] + [f"{h}_mortality.tif" for h in (
-        "earthquake", "flood", "cyclone", "tsunami",
-        "volcano", "drought", "wildfire", "landslide",
-    )]
+    hazards = ("earthquake", "flood", "cyclone", "tsunami",
+               "volcano", "drought", "wildfire", "landslide")
+    needed = ["risk_mortality.tif"]
+    needed += [f"{h}_mortality.tif" for h in hazards]
+    needed += [f"{h}_intensity.tif" for h in hazards]
     if all((out_dir / n).exists() for n in needed):
         return out_dir
-    print("\n[disaster pipeline] Building per-hazard mortality rasters ...")
+    print("\n[disaster pipeline] Building per-hazard mortality + intensity rasters ...")
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import process_disasters as pd_mod
     pd_mod.main()
@@ -1025,37 +1026,45 @@ def _ensure_disaster_rasters() -> Path:
 
 
 def _make_disaster_processor(axis_id: str, src_name: str, *, hover_label: str,
-                              composite: bool = False):
-    """Build a process_<hazard>() that emits {axis_id}.pmtiles from
-    data/Hazard/_out/{src_name}.tif (already-calibrated deaths/M/yr raster).
+                              composite: bool = False,
+                              data_max: float = 200.0,
+                              transform: str = "gamma",  # "gamma" | "sqrt" | "linear"
+                              gamma: float = 0.4):
+    """Emit {axis_id}.pmtiles from data/Hazard/_out/{src_name}.tif.
 
-    Display: Bright = SAFE (low mortality). Inverted color, log-ish stretch
-    via clip + sqrt for headroom in low values. Hover values come from
-    public/risk_lookup.json so the heatmap can stay perceptually balanced.
+    For the composite Disasters axis: src is calibrated mortality (d/M/yr).
+    For individual hazards: src is the *intensity* raster in native units
+    (e.g. PGA in g for eq, depth in m for flood, etc.). The visual stretch
+    is hazard-specific; hover values come from risk_lookup.json which carries
+    both the native intensity and the calibrated mortality per cell.
+
+    Display: Bright = SAFE (low value). Color is inverted.
     """
     def _proc():
-        label = "DISASTER MORTALITY" if composite else f"HAZARD MORTALITY"
-        print(f"\n=== {label}: {axis_id} ===")
+        label = "DISASTER MORTALITY" if composite else "HAZARD INTENSITY"
+        print(f"\n=== {label}: {axis_id}  ({transform}, max={data_max}) ===")
         out_dir = _ensure_disaster_rasters()
         src = out_dir / f"{src_name}.tif"
         if not src.exists():
             print(f"  ERROR: {src} not found")
             return None
 
-        # Apply sqrt stretch to give low-mortality places visible color while
-        # not saturating Haiti/Dhaka. Cap at COMPOSITE_DISPLAY_MAX = 200 deaths/M/yr.
         work_dir = TILES / axis_id
         ensure_dir(work_dir)
         stretched = work_dir / f"{axis_id}_stretched.tif"
         with rasterio.open(src) as ds:
             arr = ds.read(1).astype(np.float32)
             profile = ds.profile.copy()
-        cap = 200.0
+        cap = float(data_max)
         arr = np.clip(arr, 0, cap)
-        # gamma compression for visibility: y = (x/cap)^0.4 * cap
-        with np.errstate(invalid="ignore"):
-            arr = np.power(arr / cap, 0.4) * cap
-        # Mask oceans + large lakes so water bodies don't render as "safe land"
+        if transform == "gamma":
+            with np.errstate(invalid="ignore"):
+                arr = np.power(arr / cap, gamma) * cap
+        elif transform == "sqrt":
+            with np.errstate(invalid="ignore"):
+                arr = np.sqrt(arr / cap) * cap
+        # else "linear" -- no extra transform
+
         try:
             wm = build_water_mask(src)
         except Exception as e:
@@ -1063,6 +1072,7 @@ def _make_disaster_processor(axis_id: str, src_name: str, *, hover_label: str,
             wm = None
         if wm is not None and wm.shape == arr.shape:
             arr[wm] = -9999
+
         profile.update(dtype="float32", nodata=-9999, compress="deflate")
         with rasterio.open(stretched, "w", **profile) as dst:
             dst.write(arr.astype(np.float32), 1)
@@ -1078,7 +1088,10 @@ def process_risk():
     """Composite natural disaster mortality (deaths/M/yr) -> risk.pmtiles."""
     return _make_disaster_processor("risk", "risk_mortality",
                                     hover_label="Disaster",
-                                    composite=True)()
+                                    composite=True,
+                                    data_max=200.0,
+                                    transform="gamma",
+                                    gamma=0.4)()
 
 
 def _legacy_process_risk():
@@ -2727,18 +2740,28 @@ PROCESSORS = {
 for _aid, (_fuels, _label, _dmax) in FUEL_AXES.items():
     PROCESSORS[_aid] = _make_fuel_processor(_aid, _fuels, _label, _dmax)
 
-# Individual hazards (mortality in deaths/M/yr, calibrated by EM-DAT)
-for _hid, _src in (
-    ("eq",        "earthquake_mortality"),
-    ("flood",     "flood_mortality"),
-    ("cyclone",   "cyclone_mortality"),
-    ("tsunami",   "tsunami_mortality"),
-    ("volcano",   "volcano_mortality"),
-    ("drought",   "drought_mortality"),
-    ("wildfire",  "wildfire_mortality"),
-    ("landslide", "landslide_mortality"),
+# Individual hazards rendered in their native physical units. Each is read
+# from data/Hazard/_out/{hazard}_intensity.tif (raw, uncalibrated). The
+# display cap and transform are tuned per hazard so the color ramp lands in
+# a useful place for each unit.
+#
+# Hover values in App.tsx come from public/risk_lookup.json which carries
+# both the intensity (native units) and the EM-DAT-calibrated mortality
+# (d/M/yr) per cell.
+for _hid, _src, _max, _tx, _g in (
+    ("eq",        "earthquake_intensity", 1.5,  "gamma",  0.55),  # PGA in g
+    ("flood",     "flood_intensity",      10.0, "sqrt",   0.0),   # depth in m
+    ("cyclone",   "cyclone_intensity",    90.0, "gamma",  0.7),   # wind m/s
+    ("tsunami",   "tsunami_intensity",    10.0, "sqrt",   0.0),   # runup m
+    ("volcano",   "volcano_intensity",    8.0,  "gamma",  0.4),   # density score
+    ("drought",   "drought_intensity",    0.5,  "linear", 0.0),   # freq fraction
+    ("wildfire",  "wildfire_intensity",   0.4,  "linear", 0.0),   # freq fraction
+    ("landslide", "landslide_intensity",  45.0, "linear", 0.0),   # slope in degrees
 ):
-    PROCESSORS[_hid] = _make_disaster_processor(_hid, _src, hover_label=_hid.title())
+    PROCESSORS[_hid] = _make_disaster_processor(
+        _hid, _src, hover_label=_hid.title(),
+        data_max=_max, transform=_tx, gamma=_g,
+    )
 
 
 def main():

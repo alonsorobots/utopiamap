@@ -133,6 +133,34 @@ The frontend serves tile data from `/data/tiles` in dev. In production it
 reads `VITE_TILES_BASE` (e.g. `https://tiles.utopiamap.com`) at build time so
 tiles are loaded from R2.
 
+## Real-time collaboration (optional)
+
+The frontend supports an Excalidraw-style "Share session" mode: anyone
+with the link is in the same room, sees each other's cursors, and stays
+in sync on the active axis / formula / year. There's no auth, no login,
+and the relay never persists anything -- when the last tab closes, the
+session evaporates.
+
+The backend is a tiny Cloudflare Worker + Durable Object in
+[`collab-worker/`](./collab-worker/). To run end-to-end locally:
+
+```sh
+# terminal 1: relay
+cd collab-worker
+npm install
+npm run dev          # ws://localhost:8787/room/<id>
+
+# terminal 2: app, pointed at the local relay
+cd app
+echo "VITE_COLLAB_URL=ws://localhost:8787/room/" > .env.local
+npm run dev
+```
+
+To deploy: `cd collab-worker && npm run deploy`, then optionally
+attach a Workers custom domain like `collab.utopiamap.com` and set
+`VITE_COLLAB_URL=wss://collab.utopiamap.com/room/` in your production
+build env.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).

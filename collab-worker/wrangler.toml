@@ -1,0 +1,19 @@
+name = "utopiamap-collab"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+
+# Durable Object that holds an in-memory list of WebSockets for one room and
+# relays Yjs sync + awareness messages between them. State lives only as long
+# as at least one client is connected; nothing is persisted to disk.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RoomDO"]
+
+# Custom domain (set up after first deploy):
+#   wrangler deploy
+#   then in the CF dashboard add a custom domain like collab.utopiamap.com
+# The frontend reads VITE_COLLAB_URL=wss://collab.utopiamap.com/room/

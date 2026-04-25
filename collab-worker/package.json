@@ -1,0 +1,17 @@
+{
+  "name": "utopiamap-collab-worker",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker + Durable Object that relays Yjs sync messages between collaborators of a utopiamap.com room. No persistence, no auth -- room id in URL is the only access boundary, exactly like Excalidraw.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.90.0"
+  }
+}

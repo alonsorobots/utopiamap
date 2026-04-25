@@ -30,6 +30,8 @@ import { TopBar } from './TopBar';
 import type { AxisOption } from './TopBar';
 import { decodeStateFromHash, encodeStateToHash, isShareHash } from './shareLink';
 import type { ShareableState } from './shareLink';
+import { useCollab } from './useCollab';
+import { CollabBar, CollabCursors } from './CollabUI';
 import './App.css';
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -1647,6 +1649,33 @@ export default function App() {
     mapRef.current?.triggerRepaint();
   }, [snapYearToAxis, isSingleAxisFormula]);
 
+  // Real-time collaboration. Keeps activeAxis / formula / year in lock-step
+  // with everyone else in the same #room=<id>. Cursor positions are pushed
+  // separately via Y.Awareness so they don't bloat the persistent doc.
+  const collab = useCollab({
+    onAxis: (axis) => {
+      setActiveAxis(axis);
+      setHeatmapActiveAxis(axis);
+      if (isSingleAxisFormula(formulaRef.current)) {
+        setFormula(axis);
+        const err = setHeatmapFormula(axis);
+        setFormulaError(err ? err.message : null);
+      }
+      snapYearToAxis(axis);
+      mapRef.current?.triggerRepaint();
+    },
+    onFormula: (f) => {
+      setFormula(f);
+      const err = setHeatmapFormula(f);
+      setFormulaError(err ? err.message : null);
+      mapRef.current?.triggerRepaint();
+    },
+    onYear: (y, s) => {
+      setTimeYear(y, s);
+      timePanelRef.current?.jumpToYear(y);
+    },
+  });
+
   const stepAxis = useCallback((dir: 1 | -1) => {
     setActiveAxis((prev) => {
       const idx = MAIN_AXIS_IDS.indexOf(prev);
@@ -1676,6 +1705,18 @@ export default function App() {
       map.setLayoutProperty('adm2-borders-layer', 'visibility', 'visible');
     } catch {}
   }, [activeAxis, mapLoaded]);
+
+  // Push local axis / formula / cursor-axis into the shared collab doc
+  // whenever they change. Y.Map.set is a no-op when the value already
+  // matches, so this also harmlessly re-fires after a remote update without
+  // bouncing back.
+  useEffect(() => {
+    collab.publishView({ axis: activeAxis });
+    collab.publishCursor(null, activeAxis);
+  }, [activeAxis, collab]);
+  useEffect(() => {
+    collab.publishView({ formula });
+  }, [formula, collab]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2076,11 +2117,13 @@ export default function App() {
       const { lng, lat } = e.lngLat;
       lastMapPointRef.current = { lng, lat, px: e.point.x, py: e.point.y };
       computeHoverText(lng, lat, e.point.x, e.point.y);
+      collab.publishCursor({ lng, lat }, activeAxisRef.current);
     }
 
     function onLeave() {
       lastMapPointRef.current = null;
       setHoverInfo(null);
+      collab.publishCursor(null, activeAxisRef.current);
     }
 
     map.on('mousemove', onMove);
@@ -2089,7 +2132,7 @@ export default function App() {
       map.off('mousemove', onMove);
       map.getCanvas().removeEventListener('mouseleave', onLeave);
     };
-  }, [mapLoaded, computeHoverText]);
+  }, [mapLoaded, computeHoverText, collab]);
 
   useEffect(() => {
     const pos = lastMapPointRef.current;
@@ -2197,6 +2240,17 @@ export default function App() {
         onBuildReadonlyLink={buildReadonlyShareLink}
       />
 
+      <CollabBar
+        enabled={collab.enabled}
+        status={collab.status}
+        peers={collab.peers}
+        roomId={collab.roomId}
+        shareUrl={collab.shareUrl}
+        onStart={collab.startSession}
+        onEnd={collab.endSession}
+      />
+      <CollabCursors map={mapRef.current} peers={collab.peers} />
+
       {isShareView && (
         <div className="shared-session-pill" title="You are viewing a snapshot from a shared link. Your own session is untouched.">
           <span className="shared-session-dot" />
@@ -2223,7 +2277,7 @@ export default function App() {
       {mapLoaded && activeAxis !== 'draw' && (
         <TimePanel
           ref={timePanelRef}
-          onTimeChange={(y, s) => { setTimeYear(y, s); triggerSave(); }}
+          onTimeChange={(y, s) => { setTimeYear(y, s); triggerSave(); collab.publishView({ year: y, scenario: s }); }}
           disabled={!isAxisTemporal(activeAxis)}
           initialYear={saved?.year}
           overrideYear={AXES[activeAxis]?.staticYear}

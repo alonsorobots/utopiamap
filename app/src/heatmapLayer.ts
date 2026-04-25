@@ -144,7 +144,24 @@ let currentYear = 2020;
 let currentScenario = 'historical';
 let isPrediction = false;
 
-const ALL_AXES = ['temp', 'tvar', 'water', 'solar', 'wind', 'energy', 'agri', 'agrip', 'pop', 'gdp', 'cost', 'air', 'elev', 'risk', 'inet', 'depv', 'hcare', 'travel', 'free', 'draw'];
+// All axis IDs the heatmap layer can render. MUST be kept in sync with
+// AXES in App.tsx -- otherwise picking that axis (or naming it in a
+// formula) silently renders blank because the curve LUT texture is
+// never created and the shader's curve sampler reads garbage.
+const ALL_AXES = [
+  // Climate / geography
+  'temp', 'tvar', 'water', 'solar', 'wind', 'air', 'elev',
+  // Energy
+  'energy', 'e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke',
+  'e_hydro', 'e_wind', 'e_solar', 'e_geo',
+  // Society
+  'agri', 'agrip', 'pop', 'gdp', 'inet', 'depv', 'hcare', 'travel', 'free',
+  // Disasters (composite + per-hazard)
+  'risk', 'eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought',
+  'wildfire', 'landslide',
+  // Visual / interactive
+  'vista', 'draw',
+];
 
 // ── Per-axis curve lookups (global, not tiled) ───────────────────────
 
@@ -1084,9 +1101,14 @@ export function createHeatmapLayer(): CustomLayerInterface {
       const axes = currentFormulaAxes.length > 0 ? currentFormulaAxes : [activeAxisId];
       const numAxes = axes.length;
 
-      // Bind curve lookup textures to high texture units (stable across tiles)
+      // Bind curve lookup textures to high texture units (stable across tiles).
+      // Lazily create the curve LUT if an axis isn't in ALL_AXES yet -- otherwise
+      // the shader's u_curve_<id> sampler binds to texture unit 0 (a 256x256
+      // tile texture, not a 256x1 LUT) and reads garbage, which manifests as
+      // "this axis renders black/blank no matter what".
       for (let i = 0; i < numAxes; i++) {
         const id = axes[i];
+        ensureCurveTexture(gl, id);
         const curveEntry = curveEntries.get(id);
         if (!curveEntry?.texture) continue;
         const unit = numAxes + i;

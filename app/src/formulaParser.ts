@@ -30,7 +30,7 @@ export function tokenize(input: string): Token[] {
     const end = start + text.length;
 
     if (m[1]) tokens.push({ type: 'number', text, start, end });
-    else if (m[2] && text === 'x') tokens.push({ type: 'op', text: '*', start, end });
+    else if (m[2] && text.toLowerCase() === 'x') tokens.push({ type: 'op', text: '*', start, end });
     else if (m[2]) tokens.push({ type: 'ident', text, start, end });
     else if (m[3]) tokens.push({ type: 'op', text, start, end });
     else if (m[4]) tokens.push({ type: 'paren', text, start, end });
@@ -115,7 +115,11 @@ export function parse(input: string): ParseResult {
 
     if (t.type === 'ident') {
       advance();
-      const resolved = ALIASES[t.text] ?? t.text;
+      // Identifiers are case-insensitive: 'Temp', 'TEMP' and 'temp' all
+      // resolve to the same axis. Aliases ('t' -> 'temp') are keyed
+      // lowercase in ALIASES so we just normalize before lookup.
+      const lower = t.text.toLowerCase();
+      const resolved = ALIASES[lower] ?? lower;
       axes.add(resolved);
       return { type: 'ident', name: resolved };
     }

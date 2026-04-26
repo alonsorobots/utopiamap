@@ -324,15 +324,13 @@ export function FormulaBar({
             <span
               key={`${i}-${tok.start}`}
               className={isHovered ? 'formula-token-ident formula-token-ident-hover' : 'formula-token-ident'}
-              title="Double-click to tune this axis"
+              title="Click to tune this axis"
               onMouseEnter={() => onIdentEnter(tok)}
               onMouseLeave={onIdentLeave}
-              // Swallow single-clicks so the parent's onClick (enter
-              // edit mode) doesn't fire and unmount this span before
-              // the dblclick can land. Edit mode is still entered by
-              // clicking anywhere else on the bar.
-              onClick={(e) => e.stopPropagation()}
-              onDoubleClick={(e) => {
+              // Click on an identifier opens the curve editor for it.
+              // Stop propagation so the parent's onClick (enter edit
+              // mode) doesn't also fire.
+              onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
                 onIdentDoubleClick?.(tok.text);

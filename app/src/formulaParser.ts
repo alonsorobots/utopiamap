@@ -74,13 +74,15 @@ export const ALIASES: Record<string, string> = {
   pollution: 'air', smog: 'air', aqi: 'air', pm25: 'air',
   elevation: 'elev', altitude: 'elev', height: 'elev', mountain: 'elev',
   // Disasters axis (Bright = safe). All of these map to the same composite.
-  safety: 'risk', disaster: 'risk', disasters: 'risk', hazard: 'risk', hazards: 'risk',
+  // `dis` mirrors the short hint shown in the hamburger menu.
+  dis: 'risk', safety: 'risk', disaster: 'risk', disasters: 'risk', hazard: 'risk', hazards: 'risk',
   earthquake: 'risk', earthquakes: 'risk', quake: 'risk', seismic: 'risk',
   flood: 'risk', flooding: 'risk', floods: 'risk',
   landslide: 'risk', landslides: 'risk', tsunami: 'risk',
   cyclone: 'risk', hurricane: 'risk', typhoon: 'risk',
   drought: 'risk', wildfire: 'risk', volcano: 'risk',
-  internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
+  // `conn` mirrors the short hint shown in the hamburger menu.
+  conn: 'inet', internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
   development: 'depv', deprivation: 'depv', hdi: 'depv', poverty: 'depv',
   healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',
   remoteness: 'travel', urban: 'travel', city: 'travel', wilderness: 'travel',

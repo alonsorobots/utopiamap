@@ -5,6 +5,9 @@ export interface AxisOption {
   id: string;
   label: string;
   hotkey: string;
+  /** Optional short identifier shown in the menu instead of `id`.
+   *  The internal `id` still drives tile URLs and saved state. */
+  displayId?: string;
   description?: string;
   unitDescription?: string;
   source?: string;
@@ -276,7 +279,7 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
                 >
                   <span>{a.label}</span>
                   <span className="axis-menu-right">
-                    <span className="axis-menu-hint">{a.id}</span>
+                    <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
                     {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
                   </span>
                 </button>
@@ -309,7 +312,7 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
                           >
                             <span>{a.label}</span>
                             <span className="axis-menu-right">
-                              <span className="axis-menu-hint">{a.id}</span>
+                              <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
                               {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
                             </span>
                           </button>
@@ -328,7 +331,7 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
             onFormulaChange={onFormulaChange}
             onSelectionChange={onFormulaSelectionChange}
             onIdentDoubleClick={onFormulaIdentDoubleClick}
-            placeholder="e.g. temp + water / pop  (Tab to autocomplete)"
+            placeholder="e.g. temp + water / pop"
             error={formulaError}
             axisOrder={formulaAxisOrder}
           />

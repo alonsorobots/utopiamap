@@ -1198,7 +1198,7 @@ const AXES: Record<string, AxisConfig> = {
     infoHeight: 195
   },
   travel: {
-    label: 'Travel to City',
+    label: 'City',
     dataMin: 0,
     dataMax: 720,
     unit: 'min',
@@ -1257,7 +1257,7 @@ const AXES: Record<string, AxisConfig> = {
     infoHeight: 285
   },
   draw: {
-    label: 'Draw',
+    label: 'DRAW',
     dataMin: 0,
     dataMax: 1,
     unit: '',
@@ -1280,10 +1280,10 @@ const HAZARD_SUB_IDS = ['eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought
 // single source of truth -- AXIS_OPTIONS, the arrow-key cycle and the
 // formula-bar autocomplete priority all derive from it.
 const MAIN_AXIS_IDS = [
-  'temp', 'air', 'hcare', 'risk', 'water',
-  'inet', 'travel', 'pop', 'gdp', 'depv',
-  'tvar', 'vista', 'solar', 'wind', 'elev',
-  'agri', 'agrip', 'energy', 'free', 'draw',
+  'temp', 'tvar', 'water', 'pop', 'hcare',
+  'gdp', 'agri', 'agrip', 'solar', 'risk',
+  'energy', 'inet', 'free', 'depv', 'air',
+  'travel', 'elev', 'vista', 'wind', 'draw',
 ].filter((id) => id in AXES);
 
 // Arrow keys should cycle through every axis the user can possibly
@@ -1299,6 +1299,17 @@ const CYCLE_AXIS_IDS: string[] = (() => {
   }
   return out;
 })();
+
+// Short identifier shown next to each axis in the hamburger menu and used
+// as the friendly typed-name in the formula bar. Defaults to the internal
+// id; override here when we want a snappier abbreviation. The internal id
+// is intentionally left alone (it keys tile URLs, R2 paths, the curve
+// catalog and saved hashes).
+const DISPLAY_IDS: Record<string, string> = {
+  risk: 'dis',
+  inet: 'conn',
+  travel: 'city',
+};
 
 const HOTKEYS: Record<string, string> = {
   temp: 't',
@@ -1339,6 +1350,7 @@ const AXIS_OPTIONS: AxisOption[] = MAIN_AXIS_IDS.map((id) => {
     id,
     label: a.label,
     hotkey: HOTKEYS[id] ?? id[0],
+    displayId: DISPLAY_IDS[id],
     description: a.description,
     unitDescription: a.unitDescription,
     source: a.source,
@@ -1352,6 +1364,7 @@ function _toAxisOption(id: string): AxisOption {
     id,
     label: a.label,
     hotkey: HOTKEYS[id] ?? id[0],
+    displayId: DISPLAY_IDS[id],
     description: a.description,
     unitDescription: a.unitDescription,
     source: a.source,
@@ -1666,8 +1679,12 @@ export default function App() {
     setActiveAxis(axisId);
     setHeatmapActiveAxis(axisId);
     if (isSingleAxisFormula(formulaRef.current)) {
-      setFormula(axisId);
-      const err = setHeatmapFormula(axisId);
+      // Show the friendly short hint (e.g. "dis", "conn") in the formula
+      // bar when one is defined, so the formula matches what the menu
+      // displays. The alias resolves back to the canonical id at parse time.
+      const formulaText = DISPLAY_IDS[axisId] ?? axisId;
+      setFormula(formulaText);
+      const err = setHeatmapFormula(formulaText);
       setFormulaError(err ? err.message : null);
     }
     snapYearToAxis(axisId);

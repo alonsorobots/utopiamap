@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { FormulaBar } from './FormulaBar';
 
 export interface AxisOption {
@@ -267,62 +267,75 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
           <button className="top-bar-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="Select data axis">
             <HamburgerIcon />
           </button>
-          {menuOpen && (
-            <div className="axis-menu">
-              {axes.map((a) => (
-                <button
-                  key={a.id}
-                  className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
-                  onClick={() => { onAxisChange(a.id); setMenuOpen(false); }}
-                  onMouseEnter={() => onMenuItemEnter(a)}
-                  onMouseLeave={onMenuItemLeave}
-                >
-                  <span>{a.label}</span>
-                  <span className="axis-menu-right">
-                    <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
-                    {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
-                  </span>
-                </button>
-              ))}
-              {([
-                { key: 'energy', label: 'Energy ...', items: energySubAxes },
-                { key: 'hazards', label: 'Natural Hazards ...', items: hazardSubAxes },
-              ] as { key: string; label: string; items?: AxisOption[] }[])
-                .filter((g) => g.items && g.items.length > 0)
-                .map((group) => (
-                  <div
-                    key={group.key}
-                    className="axis-more-wrapper"
-                    onMouseEnter={() => onMoreEnter(group.key)}
-                    onMouseLeave={onMoreLeave}
-                  >
-                    <div className="axis-menu-item axis-more-trigger">
-                      <span>{group.label}</span>
-                      <span className="axis-menu-right" style={{ fontSize: 11 }}>&#9654;</span>
-                    </div>
-                    {openSubMenu === group.key && (
-                      <div className="axis-menu axis-submenu" ref={positionSubmenu}>
-                        {group.items!.map((a) => (
-                          <button
-                            key={a.id}
-                            className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
-                            onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
-                            onMouseEnter={() => onMenuItemEnter(a, true)}
-                            onMouseLeave={onMenuItemLeave}
-                          >
-                            <span>{a.label}</span>
-                            <span className="axis-menu-right">
-                              <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
-                              {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+          {menuOpen && (() => {
+            const submenuGroups = ([
+              { key: 'energy', label: 'Energy ...', items: energySubAxes },
+              { key: 'hazards', label: 'Natural Hazards ...', items: hazardSubAxes },
+            ] as { key: string; label: string; items?: AxisOption[] }[])
+              .filter((g) => g.items && g.items.length > 0);
+
+            const renderAxis = (a: AxisOption) => (
+              <button
+                key={a.id}
+                className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
+                onClick={() => { onAxisChange(a.id); setMenuOpen(false); }}
+                onMouseEnter={() => onMenuItemEnter(a)}
+                onMouseLeave={onMenuItemLeave}
+              >
+                <span>{a.label}</span>
+                <span className="axis-menu-right">
+                  <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
+                  {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
+                </span>
+              </button>
+            );
+
+            const renderSubmenuGroups = () => submenuGroups.map((group) => (
+              <div
+                key={group.key}
+                className="axis-more-wrapper"
+                onMouseEnter={() => onMoreEnter(group.key)}
+                onMouseLeave={onMoreLeave}
+              >
+                <div className="axis-menu-item axis-more-trigger">
+                  <span>{group.label}</span>
+                  <span className="axis-menu-right" style={{ fontSize: 11 }}>&#9654;</span>
+                </div>
+                {openSubMenu === group.key && (
+                  <div className="axis-menu axis-submenu" ref={positionSubmenu}>
+                    {group.items!.map((a) => (
+                      <button
+                        key={a.id}
+                        className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
+                        onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                        onMouseEnter={() => onMenuItemEnter(a, true)}
+                        onMouseLeave={onMenuItemLeave}
+                      >
+                        <span>{a.label}</span>
+                        <span className="axis-menu-right">
+                          <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
+                          {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                ))}
-            </div>
-          )}
+                )}
+              </div>
+            ));
+
+            // Submenus go right before the "draw" item so the menu reads:
+            // ...wind, Energy..., Natural Hazards..., DRAW. If there is
+            // no draw axis (paranoid fallback), append at the end.
+            const drawIdx = axes.findIndex((a) => a.id === 'draw');
+            const elements: React.ReactNode[] = [];
+            axes.forEach((a, i) => {
+              if (i === drawIdx) elements.push(...renderSubmenuGroups());
+              elements.push(renderAxis(a));
+            });
+            if (drawIdx < 0) elements.push(...renderSubmenuGroups());
+
+            return <div className="axis-menu">{elements}</div>;
+          })()}
         </div>
 
         <div className="top-bar-center">

@@ -329,8 +329,13 @@ async function decodeAndCropTile(
     if (!made) return null;
     const { ctx } = made;
 
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'medium';
+    // Nearest-neighbour during overzoom: bilinear blends the nodata
+    // sentinel (R=0) with adjacent data pixels and produces fringe values
+    // that get mistaken for very-low data on sparse layers (e.g. nuclear
+    // plants, earthquake epicentres). Combined with the LINEAR_UP curve
+    // those fringes lit up the entire ocean as bright -- swamping the
+    // real signal and making it look like the curve editor was broken.
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
       bitmap,
       localX * srcSize, localY * srcSize, srcSize, srcSize,
@@ -338,30 +343,25 @@ async function decodeAndCropTile(
     );
     const imgData = ctx.getImageData(0, 0, TILE_PX, TILE_PX);
     const result = new Uint8Array(imgData.data.buffer);
-    cleanNodataFringe(result);
+    applyNodataAlpha(result);
     return result;
   } catch {
     return null;
   }
 }
 
-function cleanNodataFringe(pixels: Uint8Array) {
+// Pipeline encodes nodata as R=0 (valid data is 1-255). PMTiles PNGs are
+// 3-band RGB, so the canvas always reports alpha=255 -- we must derive
+// transparency from R ourselves. Without this, oceans / sparse layers
+// (energy plants, hazards) render as solid bright fields under any
+// LINEAR_UP curve, swamping the actual data points and making it look
+// like the curve editor has no effect.
+function applyNodataAlpha(pixels: Uint8Array) {
   for (let i = 0; i < pixels.length; i += 4) {
-    // If it's mostly transparent, force to absolute nodata
-    if (pixels[i + 3] < 128) {
-      pixels[i] = 0;
-      pixels[i + 1] = 0;
-      pixels[i + 2] = 0;
+    if (pixels[i] === 0) {
       pixels[i + 3] = 0;
     } else {
-      // Force fully opaque
       pixels[i + 3] = 255;
-      // If RGB ended up at exactly 0 through blending, but it's an opaque data pixel, bump it to 1
-      if (pixels[i] === 0 && pixels[i + 1] === 0 && pixels[i + 2] === 0) {
-        pixels[i] = 1;
-        pixels[i + 1] = 1;
-        pixels[i + 2] = 1;
-      }
     }
   }
 }
@@ -374,10 +374,13 @@ async function decodePngToRGBA(data: ArrayBuffer): Promise<Uint8Array | null> {
     const made = makeCanvas(TILE_PX, TILE_PX);
     if (!made) return null;
     const { ctx } = made;
+    // Same reasoning as decodeAndCropTile: any smoothing here would blend
+    // R=0 nodata with adjacent valid pixels, producing fringe artifacts.
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(bitmap, 0, 0, TILE_PX, TILE_PX);
     const imgData = ctx.getImageData(0, 0, TILE_PX, TILE_PX);
     const result = new Uint8Array(imgData.data.buffer);
-    cleanNodataFringe(result);
+    applyNodataAlpha(result);
     return result;
   } catch {
     return null;

@@ -1270,11 +1270,35 @@ const AXES: Record<string, AxisConfig> = {
   },
 };
 
-const AXIS_IDS = Object.keys(AXES);
 const ENERGY_SUB_IDS = ['e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke', 'e_hydro', 'e_wind', 'e_solar', 'e_geo'];
 const HAZARD_SUB_IDS = ['eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought', 'wildfire', 'landslide'];
-const SUBMENU_IDS = new Set([...ENERGY_SUB_IDS, ...HAZARD_SUB_IDS]);
-const MAIN_AXIS_IDS = AXIS_IDS.filter((id) => !SUBMENU_IDS.has(id));
+
+// Explicit menu / cycle order, ranked by how likely a typical user is to
+// reach for an axis when deciding where to live: practical things first
+// (climate, air, healthcare, hazards), squishier / more subjective ones
+// last (freedom, agriculture, draw-your-own). Keep this list as the
+// single source of truth -- AXIS_OPTIONS, the arrow-key cycle and the
+// formula-bar autocomplete priority all derive from it.
+const MAIN_AXIS_IDS = [
+  'temp', 'air', 'hcare', 'risk', 'water',
+  'inet', 'travel', 'pop', 'gdp', 'depv',
+  'tvar', 'vista', 'solar', 'wind', 'elev',
+  'agri', 'agrip', 'energy', 'free', 'draw',
+].filter((id) => id in AXES);
+
+// Arrow keys should cycle through every axis the user can possibly
+// tune, including the energy + hazard sub-axes (otherwise they'd be
+// invisible to keyboard navigation). Interleave the subs right after
+// their parent so arrow-stepping feels related instead of random.
+const CYCLE_AXIS_IDS: string[] = (() => {
+  const out: string[] = [];
+  for (const id of MAIN_AXIS_IDS) {
+    out.push(id);
+    if (id === 'energy') out.push(...ENERGY_SUB_IDS.filter((s) => s in AXES));
+    if (id === 'risk') out.push(...HAZARD_SUB_IDS.filter((s) => s in AXES));
+  }
+  return out;
+})();
 
 const HOTKEYS: Record<string, string> = {
   temp: 't',
@@ -1309,9 +1333,9 @@ const HOTKEYS: Record<string, string> = {
   eq: '0',
 };
 
-const AXIS_OPTIONS: AxisOption[] = Object.entries(AXES)
-  .filter(([id]) => !SUBMENU_IDS.has(id))
-  .map(([id, a]) => ({
+const AXIS_OPTIONS: AxisOption[] = MAIN_AXIS_IDS.map((id) => {
+  const a = AXES[id];
+  return {
     id,
     label: a.label,
     hotkey: HOTKEYS[id] ?? id[0],
@@ -1319,7 +1343,8 @@ const AXIS_OPTIONS: AxisOption[] = Object.entries(AXES)
     unitDescription: a.unitDescription,
     source: a.source,
     sourceUrl: a.sourceUrl,
-  }));
+  };
+});
 
 function _toAxisOption(id: string): AxisOption {
   const a = AXES[id];
@@ -1678,9 +1703,13 @@ export default function App() {
 
   const stepAxis = useCallback((dir: 1 | -1) => {
     setActiveAxis((prev) => {
-      const idx = MAIN_AXIS_IDS.indexOf(prev);
+      // Cycle through the full axis set (incl. energy + hazard sub-axes)
+      // so arrow keys can reach every map, not just the menu's top level.
+      // Falls back to the main list if `prev` is somehow off-cycle.
+      const list = CYCLE_AXIS_IDS.includes(prev) ? CYCLE_AXIS_IDS : MAIN_AXIS_IDS;
+      const idx = list.indexOf(prev);
       if (idx < 0) return prev;
-      const next = MAIN_AXIS_IDS[(idx + dir + MAIN_AXIS_IDS.length) % MAIN_AXIS_IDS.length];
+      const next = list[(idx + dir + list.length) % list.length];
       setHeatmapActiveAxis(next);
       if (isSingleAxisFormula(formulaRef.current)) {
         setFormula(next);
@@ -2234,6 +2263,7 @@ export default function App() {
         onFormulaSelectionChange={handleFormulaSelectionChange}
         onFormulaIdentDoubleClick={handleFormulaIdentDoubleClick}
         formulaError={formulaError}
+        formulaAxisOrder={CYCLE_AXIS_IDS}
         repoUrl={REPO_URL}
         onSaveFile={handleSaveFile}
         onLoadFile={handleLoadFile}

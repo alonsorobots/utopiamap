@@ -22,6 +22,9 @@ interface TopBarProps {
   onFormulaSelectionChange?: (sel: string | null) => void;
   onFormulaIdentDoubleClick?: (text: string) => void;
   formulaError?: string | null;
+  /** Ordered axis ids (most-likely-used first) used to rank formula
+   *  bar autocomplete suggestions. */
+  formulaAxisOrder: string[];
   repoUrl: string;
   onSaveFile?: () => void;
   onLoadFile?: () => void;
@@ -164,7 +167,7 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
 
 // ── TopBar ───────────────────────────────────────────────────────────
 
-export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
+export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
@@ -305,8 +308,9 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
             onFormulaChange={onFormulaChange}
             onSelectionChange={onFormulaSelectionChange}
             onIdentDoubleClick={onFormulaIdentDoubleClick}
-            placeholder="e.g. (temp * water) / pop"
+            placeholder="e.g. temp + water / pop  (Tab to autocomplete)"
             error={formulaError}
+            axisOrder={formulaAxisOrder}
           />
         </div>
 

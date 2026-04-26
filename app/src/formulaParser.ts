@@ -41,17 +41,64 @@ export function tokenize(input: string): Token[] {
 }
 
 // ── Axis aliases ─────────────────────────────────────────────────────
+//
+// Every alias here resolves to a real axis id at parse time, which means
+// the formula bar's autocomplete can safely suggest any of these words --
+// hitting Tab won't produce an "unknown identifier" error. Two flavours:
+//
+//   1. Single-letter hotkeys -- keep in sync with HOTKEYS in App.tsx so
+//      any axis hotkey also works as a formula identifier (e.g. "i" -> inet).
+//   2. Natural-language aliases for users who don't know our short ids
+//      ("earthquake" -> risk, "rainfall" -> water, "nuclear" -> e_nuke).
+//
+// Lookup is case-insensitive (identifier text is lowercased before
+// querying). Add multi-char aliases liberally; they only cost a hash slot
+// and make the formula bar feel a lot more like a real search box.
 
-// Single-letter aliases for axes. Keep these in sync with HOTKEYS in
-// App.tsx so any axis hotkey also works as a formula identifier
-// (e.g. pressing "i" switches to internet AND typing "i" in the
-// formula bar resolves to the inet axis). Lookup is case-insensitive
-// because identifier text is lowercased before this table is queried.
-const ALIASES: Record<string, string> = {
+export const ALIASES: Record<string, string> = {
+  // 1) Single-char hotkeys (kept short on purpose -- not surfaced in autocomplete)
   t: 'temp', v: 'tvar', w: 'water', s: 'solar', n: 'wind',
   e: 'energy', a: 'agri', z: 'agrip', p: 'pop', g: 'gdp', c: 'cost',
   q: 'air', l: 'elev', k: 'risk', d: 'draw',
   i: 'inet', x: 'depv', h: 'hcare', m: 'travel', o: 'vista', f: 'free',
+
+  // 2) Natural-language aliases
+  temperature: 'temp', warmth: 'temp', cold: 'temp', heat: 'temp',
+  volatility: 'tvar', seasonality: 'tvar', seasons: 'tvar',
+  precipitation: 'water', rain: 'water', rainfall: 'water', wet: 'water',
+  sunshine: 'solar', sun: 'solar', irradiance: 'solar',
+  windspeed: 'wind', breeze: 'wind',
+  population: 'pop', density: 'pop', people: 'pop', crowd: 'pop',
+  wealth: 'gdp', income: 'gdp', economy: 'gdp', rich: 'gdp',
+  affordability: 'cost', cheap: 'cost', expensive: 'cost', cola: 'cost',
+  pollution: 'air', smog: 'air', aqi: 'air', pm25: 'air',
+  elevation: 'elev', altitude: 'elev', height: 'elev', mountain: 'elev',
+  // Disasters axis (Bright = safe). All of these map to the same composite.
+  safety: 'risk', disaster: 'risk', disasters: 'risk', hazard: 'risk', hazards: 'risk',
+  earthquake: 'risk', earthquakes: 'risk', quake: 'risk', seismic: 'risk',
+  flood: 'risk', flooding: 'risk', floods: 'risk',
+  landslide: 'risk', landslides: 'risk', tsunami: 'risk',
+  cyclone: 'risk', hurricane: 'risk', typhoon: 'risk',
+  drought: 'risk', wildfire: 'risk', volcano: 'risk',
+  internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
+  development: 'depv', deprivation: 'depv', hdi: 'depv', poverty: 'depv',
+  healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',
+  remoteness: 'travel', urban: 'travel', city: 'travel', wilderness: 'travel',
+  freedom: 'free', democracy: 'free', liberty: 'free', corruption: 'free',
+  agriculture: 'agri', farming: 'agri', cropland: 'agri', farms: 'agri',
+  suitability: 'agrip', potential: 'agrip',
+  // Energy sub-axes (use distinct words to avoid colliding with the canonical ids)
+  oil: 'e_oil', petroleum: 'e_oil', gasoline: 'e_oil',
+  coal: 'e_coal',
+  natgas: 'e_gas', methane: 'e_gas',
+  nuclear: 'e_nuke', nuke: 'e_nuke', reactor: 'e_nuke', uranium: 'e_nuke',
+  hydro: 'e_hydro', dam: 'e_hydro', hydroelectric: 'e_hydro',
+  windfarm: 'e_wind', windenergy: 'e_wind', turbine: 'e_wind',
+  solarfarm: 'e_solar', solarenergy: 'e_solar', photovoltaic: 'e_solar',
+  geothermal: 'e_geo',
+  consumption: 'e_consume', usage: 'e_consume', kwh: 'e_consume',
+  // Vista
+  view: 'vista', scenery: 'vista', landscape: 'vista', terrain: 'vista',
 };
 
 // Resolve a raw identifier (case-insensitive) into its canonical axis
@@ -59,6 +106,61 @@ const ALIASES: Record<string, string> = {
 export function resolveAxisAlias(text: string): string {
   const lower = text.toLowerCase();
   return ALIASES[lower] ?? lower;
+}
+
+// ── Autocomplete index ───────────────────────────────────────────────
+//
+// One flat array, ranked by likely-use. Building it here (rather than in
+// FormulaBar) keeps the parser as the single source of truth: any alias
+// the parser accepts is a valid completion, and vice-versa.
+
+export interface Completion {
+  word: string;       // exactly what gets inserted on Tab (always lowercase)
+  resolved: string;   // axis id the word parses to (same as word for canonical ids)
+  priority: number;   // smaller = preferred; tiebreak by word length, then alpha
+}
+
+export function buildCompletionIndex(axisOrder: string[]): Completion[] {
+  const order = new Map<string, number>();
+  axisOrder.forEach((id, i) => order.set(id, i));
+
+  const entries: Completion[] = [];
+  // Canonical ids first (lowest priority numbers), in user-priority order.
+  axisOrder.forEach((id, i) => {
+    entries.push({ word: id, resolved: id, priority: i });
+  });
+  // Multi-char aliases get a worse priority than every canonical id, so
+  // typing "te" prefers "temp" over "temperature" -- matching IDE behaviour.
+  for (const [alias, axisId] of Object.entries(ALIASES)) {
+    if (alias.length <= 1) continue;
+    if (alias === axisId) continue;
+    const base = order.get(axisId);
+    const priority = axisOrder.length + (base ?? axisOrder.length);
+    entries.push({ word: alias, resolved: axisId, priority });
+  }
+  return entries;
+}
+
+// Returns the best completion for `prefix` (case-insensitive), or null if
+// nothing matches or the prefix already exactly equals a candidate. The
+// caller decides whether to render only the suffix as ghost text or
+// replace the prefix on accept.
+export function bestCompletion(prefix: string, index: Completion[]): Completion | null {
+  if (!prefix) return null;
+  const p = prefix.toLowerCase();
+  let best: Completion | null = null;
+  for (const c of index) {
+    if (c.word.length <= p.length) continue;
+    if (!c.word.startsWith(p)) continue;
+    if (!best) { best = c; continue; }
+    // Lower priority wins; tiebreak: shorter word, then lexicographic.
+    if (c.priority < best.priority) best = c;
+    else if (c.priority === best.priority) {
+      if (c.word.length < best.word.length) best = c;
+      else if (c.word.length === best.word.length && c.word < best.word) best = c;
+    }
+  }
+  return best;
 }
 
 // ── Recursive descent parser ─────────────────────────────────────────

@@ -53,6 +53,15 @@
   color: #e0e0e0;
 }
 
+/* Wraps the editing-mode input so the ghost-text autosuggest overlay can
+ * absolute-position itself against the same box. Height matches the input
+ * line so the ghost layer's geometry falls out for free. */
+.formula-input-wrap {
+  position: relative;
+  width: 100%;
+  height: 34px;
+}
+
 .formula-input {
   width: 100%;
   height: 34px;
@@ -65,6 +74,22 @@
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s, background 0.15s;
+  box-sizing: border-box;
+}
+
+/* When wrapped (editing mode w/ ghost overlay), the input must stay
+ * visually on top so the caret renders. The ghost sits behind it
+ * (z-index 0) and the input's background is made transparent so the
+ * faint suffix shows through. The non-wrapped input keeps its normal
+ * opaque background for backwards compatibility. */
+.formula-input-wrap .formula-input {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.formula-input-wrap .formula-input:focus {
+  background: transparent;
 }
 
 .formula-input::placeholder {
@@ -87,6 +112,37 @@
 
 .formula-input-error::placeholder {
   color: rgba(252, 165, 165, 0.6);
+}
+
+/* Ghost-text autosuggest overlay. Sits behind the <input> with identical
+ * font / padding so the suffix span lines up exactly where the caret is.
+ * The before/after spans are visually invisible but still occupy layout
+ * space, which positions the suggestion automatically -- no width math. */
+.formula-input-wrap .formula-ghost {
+  position: absolute;
+  inset: 0;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  line-height: 34px;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  box-sizing: border-box;
+  color: transparent;
+}
+
+.formula-input-wrap .formula-ghost-fill {
+  color: transparent;
+}
+
+.formula-input-wrap .formula-ghost-suffix {
+  color: rgba(180, 185, 210, 0.45);
+  font-style: italic;
 }
 
 /* ── Formula Display (interactive token view) ─────────────────────── */
@@ -195,11 +251,22 @@
 
 /* ── Axis Menu ─────────────────────────────────────────────────────── */
 
+/* Flex-column-wrap: when the list of axes would overrun the viewport
+ * (short windows, mobile, projector) it spills into a second/third
+ * column instead of growing a scrollbar.  --axis-menu-col-w fixes the
+ * per-column item width; --axis-menu-max-h leaves room for the top bar
+ * and a small bottom gutter so the menu never kisses the screen edge. */
 .axis-menu {
+  --axis-menu-col-w: 218px;
+  --axis-menu-max-h: calc(100vh - 60px);
   position: absolute;
   top: 42px;
   left: 0;
-  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: var(--axis-menu-max-h);
   background: rgba(24, 24, 32, 0.96);
   backdrop-filter: blur(16px);
   border-radius: 10px;
@@ -213,7 +280,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  /* Each item gets a fixed width so flex-wrap actually treats columns as
+   * uniform; the menu's overall width then grows by one column at a time. */
+  width: var(--axis-menu-col-w, 218px);
+  flex-shrink: 0;
   padding: 10px 14px;
   border: none;
   border-radius: 6px;
@@ -282,6 +352,16 @@
 
 .axis-more-wrapper {
   position: relative;
+  /* Match the per-column width so the wrapper participates in the same
+   * column flow as the regular axis items. */
+  width: var(--axis-menu-col-w, 218px);
+  flex-shrink: 0;
+}
+
+.axis-more-wrapper .axis-menu-item {
+  /* Inside the wrapper the trigger should fill the wrapper itself, not
+   * pin to the outer column width (which is already the wrapper). */
+  width: 100%;
 }
 
 .axis-more-trigger {

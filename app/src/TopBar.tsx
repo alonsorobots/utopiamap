@@ -237,6 +237,26 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
     setOpenSubMenu(null);
   }, []);
 
+  // Decide whether the submenu opens downward or upward based on where
+  // its trigger sits in the viewport. When the menu wraps into multiple
+  // columns the Energy/Hazards trigger can land near the top of a later
+  // column; anchoring to bottom would push the submenu off the top edge.
+  // Anchoring downward in that case keeps it visible.
+  const positionSubmenu = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const wrapper = node.parentElement;
+    if (!wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.top < vh / 2) {
+      node.style.top = '0';
+      node.style.bottom = 'auto';
+    } else {
+      node.style.top = 'auto';
+      node.style.bottom = '0';
+    }
+  }, []);
+
   return (
     <>
       <div className="top-bar">
@@ -278,7 +298,7 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
                       <span className="axis-menu-right" style={{ fontSize: 11 }}>&#9654;</span>
                     </div>
                     {openSubMenu === group.key && (
-                      <div className="axis-menu axis-submenu">
+                      <div className="axis-menu axis-submenu" ref={positionSubmenu}>
                         {group.items!.map((a) => (
                           <button
                             key={a.id}

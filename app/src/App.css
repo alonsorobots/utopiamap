@@ -267,6 +267,12 @@
   flex-wrap: wrap;
   align-content: flex-start;
   max-height: var(--axis-menu-max-h);
+  /* max-content forces the container to grow to encompass every wrapped
+   * column. Without this, flex column-wrap leaves the container at the
+   * width of a single column, so the background only paints behind the
+   * first column and overflowed columns appear to float on the map. */
+  width: -moz-max-content;
+  width: max-content;
   background: rgba(24, 24, 32, 0.96);
   backdrop-filter: blur(16px);
   border-radius: 10px;
@@ -370,20 +376,22 @@
 
 /* Higher specificity (`.axis-menu.axis-submenu`) so these positioning
  * rules always win over `.axis-menu` regardless of source order. The
- * submenu anchors its BOTTOM to the wrapper's bottom so it opens
- * upward from the bottom of the main dropdown -- this keeps tall
- * submenus from spilling off the bottom of the viewport. The 6px
- * padding-left keeps the hit area continuous with the main menu so
- * the mouse can travel across without triggering mouseleave. */
+ * top/bottom anchor is set by JS based on the wrapper's viewport
+ * position so the submenu always opens toward the larger free side
+ * (downward when the wrapper is in the upper half, upward when in
+ * the lower half). The 6px padding-left keeps the hit area continuous
+ * with the main menu so the mouse can travel across without
+ * triggering mouseleave. flex-wrap is disabled here so a tall submenu
+ * scrolls internally instead of spilling into a second column. */
 .axis-menu.axis-submenu {
   position: absolute;
-  top: auto;
-  bottom: 0;
   left: 100%;
   padding-left: 6px;
   z-index: 1001;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
+  flex-wrap: nowrap;
+  width: auto;
 }
 
 /* ── Save / Load Menu ──────────────────────────────────────────────── */

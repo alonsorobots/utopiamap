@@ -258,7 +258,11 @@
  * and a small bottom gutter so the menu never kisses the screen edge. */
 .axis-menu {
   --axis-menu-col-w: 218px;
+  /* Use the dynamic viewport unit (`dvh`) so iOS Safari's collapsing
+   * URL bar doesn't trick us into thinking we have more room than we
+   * actually do; fall back to `vh` for older browsers. */
   --axis-menu-max-h: calc(100vh - 60px);
+  --axis-menu-max-h: calc(100dvh - 60px);
   position: absolute;
   top: 42px;
   left: 0;
@@ -273,6 +277,11 @@
    * first column and overflowed columns appear to float on the map. */
   width: -moz-max-content;
   width: max-content;
+  /* Phones are taller than they are wide; stop the menu from overflowing
+   * past the right edge of the viewport when items wrap into a 2nd or
+   * 3rd column. */
+  max-width: calc(100vw - 12px);
+  overflow-x: auto;
   background: rgba(24, 24, 32, 0.96);
   backdrop-filter: blur(16px);
   border-radius: 10px;
@@ -624,8 +633,9 @@
 
 .map-hover-tooltip {
   position: absolute;
-  transform: translate(12px, -100%);
-  margin-top: -8px;
+  /* Position is computed in JS (useLayoutEffect) so we can clamp/flip
+   * inside the container -- avoids the tooltip spilling off the top
+   * or right edge on phones. */
   padding: 5px 10px;
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(8px);
@@ -638,6 +648,7 @@
   white-space: pre-wrap;
   pointer-events: none;
   z-index: 25;
+  max-width: calc(100vw - 24px);
 }
 
 /* ── Curve Panel ───────────────────────────────────────────────────── */
@@ -691,6 +702,28 @@
   color: #e0e0e0;
 }
 
+/* Title-bar close button. Sits flush in the top-right corner so users
+ * can dismiss the panel without hunting for an X buried inside the
+ * scrollable content. */
+.panel-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  border-radius: 5px;
+  border: none;
+  background: rgba(255,255,255,0.06);
+  color: #808090;
+  cursor: pointer;
+}
+
+.panel-close-btn:hover {
+  background: rgba(255,80,80,0.18);
+  color: #ff9090;
+}
+
 .curve-subtitle {
   text-align: center;
   font-size: 9px;
@@ -739,6 +772,22 @@
   color: #b0b0c0;
   background: rgba(255,255,255,0.08);
   border-color: rgba(255,255,255,0.12);
+}
+
+/* Info toggle inside the curve editor's bottom row. Reuses the
+ * `curve-reset-btn` chrome but renders as a fixed-width pill so the
+ * single "i" doesn't look lost. The .active state highlights when the
+ * info panel is currently open (mirrors the global "i" hotkey state). */
+.curve-info-btn {
+  min-width: 22px;
+  text-align: center;
+  font-style: italic;
+}
+
+.curve-info-btn.active {
+  color: rgba(96, 165, 250, 0.9);
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.12);
 }
 
 .unit-btn {
@@ -1265,6 +1314,11 @@
   font-size: 9px;
   text-align: right;
   line-height: 1.2;
+}
+
+/* Phones / touch devices have no [i] keyboard shortcut to advertise. */
+@media (pointer: coarse), (max-width: 600px) {
+  .axis-detail-hint { display: none; }
 }
 
 .axis-detail-toggle {

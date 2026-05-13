@@ -40,6 +40,11 @@ interface CurveEditorProps {
   savedUnit?: string;
   onUnitChange?: (axisId: string, unit: string) => void;
   subtitle?: string;
+  /** Toggles the side info panel. Surfaced in the bottom-right of the
+   *  editor so phone users have an obvious tap target without having
+   *  to find the floating "i" badge under the time slider. */
+  onToggleInfo?: () => void;
+  infoOpen?: boolean;
 }
 
 const PAD = 12;
@@ -147,7 +152,7 @@ const SUBTITLE_H = 14;
 
 export function CurveEditor({
   width, height, axis, axisId = '', onCurveChange, savedPoints, onPointsChange,
-  savedUnit, onUnitChange, subtitle,
+  savedUnit, onUnitChange, subtitle, onToggleInfo, infoOpen,
 }: CurveEditorProps) {
   const hasUnitToggle = !!(axis?.unitOptions && axis.unitOptions.length > 1);
   const belowSvgH = BOTTOM_ROW_H + (hasUnitToggle ? 20 : 0);
@@ -599,6 +604,16 @@ export function CurveEditor({
             raw
           </button>
           <button className="curve-reset-btn" onClick={handleReset}>reset</button>
+          {onToggleInfo && (
+            <button
+              className={`curve-reset-btn curve-info-btn${infoOpen ? ' active' : ''}`}
+              onClick={onToggleInfo}
+              title={infoOpen ? 'Hide info panel' : 'Show info panel'}
+              aria-label={infoOpen ? 'Hide info panel' : 'Show info panel'}
+            >
+              i
+            </button>
+          )}
         </div>
       </div>
     </div>

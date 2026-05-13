@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol } from 'pmtiles';
@@ -1282,22 +1282,24 @@ const HAZARD_SUB_IDS = ['eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought
 const MAIN_AXIS_IDS = [
   'temp', 'tvar', 'water', 'pop', 'hcare',
   'gdp', 'agri', 'agrip', 'solar', 'risk',
-  'energy', 'inet', 'free', 'depv', 'air',
-  'travel', 'elev', 'vista', 'wind', 'draw',
+  'inet', 'free', 'depv', 'air', 'travel',
+  'elev', 'vista', 'wind', 'energy', 'draw',
 ].filter((id) => id in AXES);
 
 // Arrow keys should cycle through every axis the user can possibly
-// tune, including the energy + hazard sub-axes (otherwise they'd be
-// invisible to keyboard navigation). Interleave the subs right after
-// their parent so arrow-stepping feels related instead of random.
+// tune, including the energy + hazard sub-axes. Match the visual menu
+// order: all main axes first (so arrow keys feel like reading the
+// hamburger top-to-bottom), then the Energy and Natural Hazards
+// sub-axes, with `draw` always last to mirror DraggablePanel's reading
+// order (...wind, energy, Energy..., Natural Hazards..., DRAW).
 const CYCLE_AXIS_IDS: string[] = (() => {
-  const out: string[] = [];
-  for (const id of MAIN_AXIS_IDS) {
-    out.push(id);
-    if (id === 'energy') out.push(...ENERGY_SUB_IDS.filter((s) => s in AXES));
-    if (id === 'risk') out.push(...HAZARD_SUB_IDS.filter((s) => s in AXES));
-  }
-  return out;
+  const mainNoDraw = MAIN_AXIS_IDS.filter((id) => id !== 'draw');
+  const subs = [
+    ...ENERGY_SUB_IDS.filter((s) => s in AXES),
+    ...HAZARD_SUB_IDS.filter((s) => s in AXES),
+  ];
+  const tail = MAIN_AXIS_IDS.includes('draw') ? ['draw'] : [];
+  return [...mainNoDraw, ...subs, ...tail];
 })();
 
 // Short identifier shown next to each axis in the hamburger menu and used
@@ -1982,6 +1984,32 @@ export default function App() {
   }, [mapLoaded, triggerSave]);
 
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; text: string; color?: string } | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Clamp the hover tooltip inside the map container so it never spills
+  // off the top/right of small viewports (common on phones when the
+  // tap point is near the screen edges). Default placement is above-right
+  // of the cursor; flip horizontally / vertically when that would
+  // overflow, then hard-clamp as a last resort.
+  useLayoutEffect(() => {
+    if (!hoverInfo || !tooltipRef.current || !containerRef.current) {
+      setTooltipPos(null);
+      return;
+    }
+    const tip = tooltipRef.current.getBoundingClientRect();
+    const cont = containerRef.current.getBoundingClientRect();
+    const PAD = 6;
+    const OFFSET = 12;
+    let left = hoverInfo.x + OFFSET;
+    let top = hoverInfo.y - tip.height - 8;
+    if (left + tip.width > cont.width - PAD) left = hoverInfo.x - tip.width - OFFSET;
+    if (left < PAD) left = PAD;
+    if (top < PAD) top = hoverInfo.y + 16;
+    if (top + tip.height > cont.height - PAD) top = cont.height - tip.height - PAD;
+    if (top < PAD) top = PAD;
+    setTooltipPos({ left, top });
+  }, [hoverInfo]);
 
   const computeHoverText = useCallback((lng: number, lat: number, px: number, py: number) => {
     const map = mapRef.current;
@@ -2336,8 +2364,14 @@ export default function App() {
 
       {hoverInfo && (
         <div
+          ref={tooltipRef}
           className="map-hover-tooltip"
-          style={{ left: hoverInfo.x, top: hoverInfo.y, color: hoverInfo.color }}
+          style={{
+            left: tooltipPos ? tooltipPos.left : hoverInfo.x + 12,
+            top: tooltipPos ? tooltipPos.top : hoverInfo.y,
+            color: hoverInfo.color,
+            visibility: tooltipPos ? 'visible' : 'hidden',
+          }}
         >
           {hoverInfo.text}
         </div>
@@ -2366,6 +2400,8 @@ export default function App() {
               savedUnit={unitStatesRef.current[activeAxis]}
               onUnitChange={handleUnitChange}
               subtitle={`${activeAxis} [${HOTKEYS[activeAxis]?.toUpperCase() ?? ''}]`}
+              onToggleInfo={() => setShowInfoPanel((p) => !p)}
+              infoOpen={showInfoPanel}
             />
           )}
         </DraggablePanel>
@@ -2379,6 +2415,7 @@ export default function App() {
           initialWidth={infoW}
           initialHeight={infoH}
           title={`${axis.label} info`}
+          onClose={() => setShowInfoPanel(false)}
           onSizeChange={(w, h) => {
             infoSizesRef.current[activeAxis] = { w, h };
             try {
@@ -2389,7 +2426,6 @@ export default function App() {
         >
           {(w, h) => (
             <div className="axis-detail-content" style={{ width: w, height: h, overflowY: 'auto', paddingRight: '4px' }}>
-              <button className="axis-detail-close" onClick={() => setShowInfoPanel(false)}>x</button>
               <p style={{ whiteSpace: 'pre-line' }}>{axis.description}</p>
               {axis.whoIsThisFor && <p className="axis-detail-who" style={{ marginTop: '8px' }}><strong>Who is this for:</strong> {axis.whoIsThisFor}</p>}
               {axis.unitDescription && <p className="axis-detail-units" style={{ marginTop: '8px' }}>{axis.unitDescription}</p>}
@@ -2430,10 +2466,10 @@ export default function App() {
           initialWidth={320}
           initialHeight={Math.min(360, 60 + axis.sources.length * 22)}
           title={`${axis.label} sources`}
+          onClose={() => setShowSourcesPanel(false)}
         >
           {(w, h) => (
             <div className="axis-detail-content" style={{ width: w, height: h, overflowY: 'auto', paddingRight: '4px' }}>
-              <button className="axis-detail-close" onClick={() => setShowSourcesPanel(false)}>x</button>
               <ul className="axis-sources-list">
                 {axis.sources!.map((s, i) => (
                   <li key={i}>

@@ -11,6 +11,7 @@ interface DraggablePanelProps {
   title: string;
   onPrev?: () => void;
   onNext?: () => void;
+  onClose?: () => void;
   onSizeChange?: (w: number, h: number) => void;
   children: ReactNode | ((width: number, height: number) => ReactNode);
 }
@@ -19,7 +20,7 @@ type Interaction = 'move' | 'resize';
 
 export function DraggablePanel({
   initialX, initialRight, initialBottomOffset, initialWidth, initialHeight,
-  minWidth = 200, minHeight = 120, title, onPrev, onNext, onSizeChange, children,
+  minWidth = 200, minHeight = 120, title, onPrev, onNext, onClose, onSizeChange, children,
 }: DraggablePanelProps) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: initialWidth, h: initialHeight });
@@ -147,6 +148,17 @@ export function DraggablePanel({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </span>
+        )}
+        {onClose && (
+          <button
+            className="panel-close-btn"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            aria-label="Close panel"
+            title="Close (i)"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="6" x2="18" y2="18" /><line x1="6" y1="18" x2="18" y2="6" /></svg>
+          </button>
         )}
       </div>
       <div style={{ width: contentW, height: contentH, overflow: 'hidden' }}>

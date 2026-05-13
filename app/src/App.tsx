@@ -1482,17 +1482,20 @@ export default function App() {
   const [hydrationKey, setHydrationKey] = useState(0); // bumped to remount CurveEditor after share-state load
   const [saved] = useState(() => (HAS_SHARE_HASH ? null : loadSavedState()));
   const [activeAxis, setActiveAxis] = useState(saved?.activeAxis ?? 'temp');
-  const [showInfoPanel, setShowInfoPanel] = useState(true);
-  const [showSourcesPanel, setShowSourcesPanel] = useState(false);
-  const [formula, setFormula] = useState(saved?.formula ?? '');
-  const [formulaError, setFormulaError] = useState<string | null>(null);
-  const curveStatesRef = useRef<Record<string, CurvePoint[]>>(saved?.curves ?? {});
-  const unitStatesRef = useRef<Record<string, string>>(saved?.units ?? {});
   const [isTouch] = useState(() =>
     typeof window !== 'undefined' &&
     navigator.maxTouchPoints > 0 &&
     window.matchMedia('(pointer: coarse)').matches,
   );
+  // Phone users land on just the graph editor (centered) -- the info
+  // panel takes over the same panel only when they tap the round "i".
+  // Desktop keeps both panels open by default, side by side.
+  const [showInfoPanel, setShowInfoPanel] = useState(!isTouch);
+  const [showSourcesPanel, setShowSourcesPanel] = useState(false);
+  const [formula, setFormula] = useState(saved?.formula ?? '');
+  const [formulaError, setFormulaError] = useState<string | null>(null);
+  const curveStatesRef = useRef<Record<string, CurvePoint[]>>(saved?.curves ?? {});
+  const unitStatesRef = useRef<Record<string, string>>(saved?.units ?? {});
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -2377,88 +2380,123 @@ export default function App() {
         </div>
       )}
 
-      {mapLoaded && activeAxis !== 'draw' && (
-        <DraggablePanel
-          initialX={24}
-          initialBottomOffset={44}
-          initialWidth={210}
-          initialHeight={225}
-          title={`${axis.label} prefs`}
-          onPrev={() => stepAxis(-1)}
-          onNext={() => stepAxis(1)}
-        >
-          {(w, h) => (
-            <CurveEditor
-              key={`${activeAxis}:${hydrationKey}`}
-              width={w}
-              height={h}
-              axis={axis}
-              axisId={activeAxis}
-              onCurveChange={handleCurveChange}
-              savedPoints={curveStatesRef.current[activeAxis]}
-              onPointsChange={handlePointsChange}
-              savedUnit={unitStatesRef.current[activeAxis]}
-              onUnitChange={handleUnitChange}
-              subtitle={`${activeAxis} [${HOTKEYS[activeAxis]?.toUpperCase() ?? ''}]`}
-              onToggleInfo={() => setShowInfoPanel((p) => !p)}
-              infoOpen={showInfoPanel}
-            />
-          )}
-        </DraggablePanel>
-      )}
+      {mapLoaded && activeAxis !== 'draw' && (() => {
+        // Reusable bits so the phone (single-panel swap) and desktop
+        // (two-panel side-by-side) layouts stay in lockstep.
+        const renderCurve = (w: number, h: number) => (
+          <CurveEditor
+            key={`${activeAxis}:${hydrationKey}`}
+            width={w}
+            height={h}
+            axis={axis}
+            axisId={activeAxis}
+            onCurveChange={handleCurveChange}
+            savedPoints={curveStatesRef.current[activeAxis]}
+            onPointsChange={handlePointsChange}
+            savedUnit={unitStatesRef.current[activeAxis]}
+            onUnitChange={handleUnitChange}
+            subtitle={`${activeAxis} [${HOTKEYS[activeAxis]?.toUpperCase() ?? ''}]`}
+          />
+        );
 
-      {showInfoPanel && activeAxis !== 'draw' && (
-        <DraggablePanel
-          key={`info-${activeAxis}`}
-          initialRight={24}
-          initialBottomOffset={44}
-          initialWidth={infoW}
-          initialHeight={infoH}
-          title={`${axis.label} info`}
-          onClose={() => setShowInfoPanel(false)}
-          onSizeChange={(w, h) => {
-            infoSizesRef.current[activeAxis] = { w, h };
-            try {
-              localStorage.setItem('infoPanelSizes', JSON.stringify(infoSizesRef.current));
-            } catch {}
-            console.log(`[Art Direction] To save these as defaults, paste this into the AI chat:\n${JSON.stringify(infoSizesRef.current)}`);
-          }}
-        >
-          {(w, h) => (
-            <div className="axis-detail-content" style={{ width: w, height: h, overflowY: 'auto', paddingRight: '4px' }}>
-              <p style={{ whiteSpace: 'pre-line' }}>{axis.description}</p>
-              {axis.whoIsThisFor && <p className="axis-detail-who" style={{ marginTop: '8px' }}><strong>Who is this for:</strong> {axis.whoIsThisFor}</p>}
-              {axis.unitDescription && <p className="axis-detail-units" style={{ marginTop: '8px' }}>{axis.unitDescription}</p>}
-              {axis.sources && axis.sources.length > 0 ? (
-                <p className="axis-detail-source">
-                  Sources:{' '}
-                  <button
-                    className="axis-detail-sources-toggle"
-                    onClick={() => setShowSourcesPanel((v) => !v)}
-                  >{axis.sources.length} datasets {showSourcesPanel ? '▾' : '▸'}</button>
-                </p>
-              ) : (
-                <p className="axis-detail-source">
-                  Source: {axis.sourceUrl
-                    ? <a href={axis.sourceUrl} target="_blank" rel="noopener noreferrer">{axis.source}</a>
-                    : axis.source}
-                </p>
-              )}
-              <div className="axis-detail-hint">[i] to toggle</div>
-            </div>
-          )}
-        </DraggablePanel>
-      )}
+        const renderInfo = (w: number, h: number) => (
+          <div className="axis-detail-content" style={{ width: w, height: h, overflowY: 'auto', paddingRight: '4px' }}>
+            <p style={{ whiteSpace: 'pre-line' }}>{axis.description}</p>
+            {axis.whoIsThisFor && <p className="axis-detail-who" style={{ marginTop: '8px' }}><strong>Who is this for:</strong> {axis.whoIsThisFor}</p>}
+            {axis.unitDescription && <p className="axis-detail-units" style={{ marginTop: '8px' }}>{axis.unitDescription}</p>}
+            {axis.sources && axis.sources.length > 0 ? (
+              <p className="axis-detail-source">
+                Sources:{' '}
+                <button
+                  className="axis-detail-sources-toggle"
+                  onClick={() => setShowSourcesPanel((v) => !v)}
+                >{axis.sources.length} datasets {showSourcesPanel ? '▾' : '▸'}</button>
+              </p>
+            ) : (
+              <p className="axis-detail-source">
+                Source: {axis.sourceUrl
+                  ? <a href={axis.sourceUrl} target="_blank" rel="noopener noreferrer">{axis.source}</a>
+                  : axis.source}
+              </p>
+            )}
+            <div className="axis-detail-hint">[i] to toggle</div>
+          </div>
+        );
 
-      {!showInfoPanel && activeAxis !== 'draw' && (
-        <button
-          className="axis-detail-toggle"
-          onClick={() => setShowInfoPanel(true)}
-          title="Show data info (i)"
-        >i</button>
-      )}
+        const infoCornerBtn = (
+          <button
+            className={`curve-info-corner-btn${showInfoPanel ? ' active' : ''}`}
+            onClick={() => setShowInfoPanel((p) => !p)}
+            title={showInfoPanel ? 'Hide info' : 'Show info'}
+            aria-label={showInfoPanel ? 'Hide info' : 'Show info'}
+          >i</button>
+        );
 
-      {showInfoPanel && showSourcesPanel && axis.sources && axis.sources.length > 0 && (
+        if (isTouch) {
+          // Phone: a single panel that swaps between curve editor and
+          // info content, preserving the user's chosen position/size.
+          // The same DraggablePanel instance is rendered in either
+          // case (no key change) so React keeps its internal state.
+          const inInfo = showInfoPanel;
+          return (
+            <DraggablePanel
+              initialCenter
+              initialBottomOffset={44}
+              initialWidth={260}
+              initialHeight={inInfo ? 240 : 225}
+              title={`${axis.label} ${inInfo ? 'info' : 'prefs'}`}
+              onPrev={() => stepAxis(-1)}
+              onNext={() => stepAxis(1)}
+              onClose={inInfo ? () => setShowInfoPanel(false) : undefined}
+              cornerButton={inInfo ? undefined : infoCornerBtn}
+            >
+              {(w, h) => inInfo ? renderInfo(w, h) : renderCurve(w, h)}
+            </DraggablePanel>
+          );
+        }
+
+        // Desktop: two panels side by side. The curve panel keeps its
+        // round info corner button so info is always one tap away even
+        // when the info panel is closed.
+        return (
+          <>
+            <DraggablePanel
+              initialX={24}
+              initialBottomOffset={44}
+              initialWidth={210}
+              initialHeight={225}
+              title={`${axis.label} prefs`}
+              onPrev={() => stepAxis(-1)}
+              onNext={() => stepAxis(1)}
+              cornerButton={infoCornerBtn}
+            >
+              {(w, h) => renderCurve(w, h)}
+            </DraggablePanel>
+            {showInfoPanel && (
+              <DraggablePanel
+                key={`info-${activeAxis}`}
+                initialRight={24}
+                initialBottomOffset={44}
+                initialWidth={infoW}
+                initialHeight={infoH}
+                title={`${axis.label} info`}
+                onClose={() => setShowInfoPanel(false)}
+                onSizeChange={(w, h) => {
+                  infoSizesRef.current[activeAxis] = { w, h };
+                  try {
+                    localStorage.setItem('infoPanelSizes', JSON.stringify(infoSizesRef.current));
+                  } catch {}
+                  console.log(`[Art Direction] To save these as defaults, paste this into the AI chat:\n${JSON.stringify(infoSizesRef.current)}`);
+                }}
+              >
+                {(w, h) => renderInfo(w, h)}
+              </DraggablePanel>
+            )}
+          </>
+        );
+      })()}
+
+      {!isTouch && showInfoPanel && showSourcesPanel && axis.sources && axis.sources.length > 0 && (
         <DraggablePanel
           key={`sources-${activeAxis}`}
           initialRight={24 + infoW + 12}

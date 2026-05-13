@@ -3,6 +3,9 @@ import { useRef, useState, useCallback, useEffect, type ReactNode } from 'react'
 interface DraggablePanelProps {
   initialX?: number;
   initialRight?: number;
+  /** Anchor the panel horizontally to the parent's center on first
+   *  mount (useful for phone layouts). User drags still take precedence. */
+  initialCenter?: boolean;
   initialBottomOffset: number;
   initialWidth: number;
   initialHeight: number;
@@ -13,14 +16,19 @@ interface DraggablePanelProps {
   onNext?: () => void;
   onClose?: () => void;
   onSizeChange?: (w: number, h: number) => void;
+  /** Optional element rendered in the bottom-right corner of the panel,
+   *  to the left of the resize handle. Used for the round info "i"
+   *  button on the curve panel. */
+  cornerButton?: ReactNode;
   children: ReactNode | ((width: number, height: number) => ReactNode);
 }
 
 type Interaction = 'move' | 'resize';
 
 export function DraggablePanel({
-  initialX, initialRight, initialBottomOffset, initialWidth, initialHeight,
-  minWidth = 200, minHeight = 120, title, onPrev, onNext, onClose, onSizeChange, children,
+  initialX, initialRight, initialCenter, initialBottomOffset, initialWidth, initialHeight,
+  minWidth = 200, minHeight = 120, title, onPrev, onNext, onClose, onSizeChange,
+  cornerButton, children,
 }: DraggablePanelProps) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: initialWidth, h: initialHeight });
@@ -34,16 +42,18 @@ export function DraggablePanel({
   const computePos = useCallback(() => {
     if (!panelRef.current) return null;
     const parent = panelRef.current.parentElement!;
-    const panelH = panelRef.current.getBoundingClientRect().height;
+    const panelRect = panelRef.current.getBoundingClientRect();
     const parentRect = parent.getBoundingClientRect();
-    const y = parentRect.height - panelH - initialBottomOffset;
+    const y = parentRect.height - panelRect.height - initialBottomOffset;
 
+    if (initialCenter) {
+      return { x: Math.max(0, (parentRect.width - panelRect.width) / 2), y };
+    }
     if (initialRight !== undefined) {
-      const panelW = panelRef.current.getBoundingClientRect().width;
-      return { x: parentRect.width - panelW - initialRight, y };
+      return { x: parentRect.width - panelRect.width - initialRight, y };
     }
     return { x: initialX ?? 0, y };
-  }, [initialX, initialRight, initialBottomOffset]);
+  }, [initialX, initialRight, initialCenter, initialBottomOffset]);
 
   useEffect(() => {
     if (userDragged.current) return;
@@ -52,7 +62,7 @@ export function DraggablePanel({
   }, [computePos]);
 
   useEffect(() => {
-    if (initialRight === undefined) return;
+    if (initialRight === undefined && !initialCenter) return;
     const onResize = () => {
       if (userDragged.current) return;
       const p = computePos();
@@ -60,7 +70,7 @@ export function DraggablePanel({
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [initialRight, computePos]);
+  }, [initialRight, initialCenter, computePos]);
 
   const startMove = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -168,6 +178,11 @@ export function DraggablePanel({
         className="resize-handle"
         onPointerDown={startResize}
       />
+      {cornerButton && (
+        <div className="panel-corner-slot" onPointerDown={(e) => e.stopPropagation()}>
+          {cornerButton}
+        </div>
+      )}
     </div>
   );
 }

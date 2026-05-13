@@ -774,20 +774,54 @@
   border-color: rgba(255,255,255,0.12);
 }
 
-/* Info toggle inside the curve editor's bottom row. Reuses the
- * `curve-reset-btn` chrome but renders as a fixed-width pill so the
- * single "i" doesn't look lost. The .active state highlights when the
- * info panel is currently open (mirrors the global "i" hotkey state). */
-.curve-info-btn {
-  min-width: 22px;
-  text-align: center;
-  font-style: italic;
+/* Bottom-right corner slot inside a DraggablePanel. Sits just to the
+ * left of the resize handle so it never collides with the drag affordance.
+ * Children are wrapped in a div so we can keep their pointer events
+ * isolated from the panel's drag/resize handlers. */
+.panel-corner-slot {
+  position: absolute;
+  bottom: 4px;
+  right: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 1;
 }
 
-.curve-info-btn.active {
-  color: rgba(96, 165, 250, 0.9);
-  border-color: rgba(96, 165, 250, 0.35);
-  background: rgba(96, 165, 250, 0.12);
+/* Round info "i" badge tucked into the curve panel's corner slot.
+ * Circular border (not the rounded-square pill of the inline reset
+ * buttons) so it reads as a distinct affordance, not part of the
+ * raw/reset cluster. */
+.curve-info-corner-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  font-style: italic;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.curve-info-corner-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.curve-info-corner-btn.active {
+  color: rgba(96, 165, 250, 0.95);
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.16);
 }
 
 .unit-btn {

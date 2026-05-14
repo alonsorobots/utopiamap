@@ -266,22 +266,19 @@
   position: absolute;
   top: 42px;
   left: 0;
+  /* Single vertically-scrolling column. We tried multi-column wrap with
+   * a side flyout submenu, but it forced horizontal scrolling on phones
+   * and made the Energy/Hazards expansion appear off-screen. A plain
+   * scrollable column with inline accordion submenus is more predictable
+   * on every form factor. */
   display: flex;
   flex-direction: column;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  max-height: var(--axis-menu-max-h);
-  /* max-content forces the container to grow to encompass every wrapped
-   * column. Without this, flex column-wrap leaves the container at the
-   * width of a single column, so the background only paints behind the
-   * first column and overflowed columns appear to float on the map. */
-  width: -moz-max-content;
-  width: max-content;
-  /* Phones are taller than they are wide; stop the menu from overflowing
-   * past the right edge of the viewport when items wrap into a 2nd or
-   * 3rd column. */
+  width: var(--axis-menu-col-w);
   max-width: calc(100vw - 12px);
-  overflow-x: auto;
+  max-height: var(--axis-menu-max-h);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   background: rgba(24, 24, 32, 0.96);
   backdrop-filter: blur(16px);
   border-radius: 10px;
@@ -295,9 +292,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Each item gets a fixed width so flex-wrap actually treats columns as
-   * uniform; the menu's overall width then grows by one column at a time. */
-  width: var(--axis-menu-col-w, 218px);
+  width: 100%;
   flex-shrink: 0;
   padding: 10px 14px;
   border: none;
@@ -365,42 +360,52 @@
   color: #60a5fa;
 }
 
-.axis-more-wrapper {
-  position: relative;
-  /* Match the per-column width so the wrapper participates in the same
-   * column flow as the regular axis items. */
-  width: var(--axis-menu-col-w, 218px);
-  flex-shrink: 0;
-}
-
-.axis-more-wrapper .axis-menu-item {
-  /* Inside the wrapper the trigger should fill the wrapper itself, not
-   * pin to the outer column width (which is already the wrapper). */
-  width: 100%;
-}
-
+/* Inline accordion trigger ("Energy ...", "Natural Hazards ..."). The
+ * chevron rotates from ▸ to ▾ when expanded; sub-items render directly
+ * underneath the trigger as siblings (see .axis-menu-subitem). */
 .axis-more-trigger {
-  cursor: default;
+  color: #b0b0c0;
 }
 
-/* Higher specificity (`.axis-menu.axis-submenu`) so these positioning
- * rules always win over `.axis-menu` regardless of source order. The
- * top/bottom anchor is set by JS based on the wrapper's viewport
- * position so the submenu always opens toward the larger free side
- * (downward when the wrapper is in the upper half, upward when in
- * the lower half). The 6px padding-left keeps the hit area continuous
- * with the main menu so the mouse can travel across without
- * triggering mouseleave. flex-wrap is disabled here so a tall submenu
- * scrolls internally instead of spilling into a second column. */
-.axis-menu.axis-submenu {
+.axis-more-trigger.open {
+  color: #e0e0e0;
+}
+
+.axis-more-chevron {
+  font-size: 11px !important;
+  width: 10px;
+  text-align: center;
+  color: #707080;
+}
+
+.axis-more-trigger.open .axis-more-chevron {
+  color: #c0c0d0;
+}
+
+/* Sub-items rendered inline beneath an expanded accordion trigger.
+ * Indented (rail + nudged padding) so the visual nesting is obvious
+ * without needing a separate panel. Slightly smaller text + tighter
+ * vertical rhythm so the menu doesn't feel like it doubled in size. */
+.axis-menu-subitem {
+  padding-left: 28px;
+  font-size: 13px;
+  color: #9090a0;
+  position: relative;
+}
+
+.axis-menu-subitem::before {
+  content: '';
   position: absolute;
-  left: 100%;
-  padding-left: 6px;
-  z-index: 1001;
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
-  flex-wrap: nowrap;
-  width: auto;
+  left: 14px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.axis-menu-subitem.active::before {
+  background: rgba(96, 165, 250, 0.45);
 }
 
 /* ── Save / Load Menu ──────────────────────────────────────────────── */

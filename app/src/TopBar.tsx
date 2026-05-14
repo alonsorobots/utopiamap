@@ -174,10 +174,10 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  // Which submenu group (energy / hazards) is currently expanded inline.
+  // Only one is open at a time so the menu doesn't grow unbounded; tapping
+  // the same trigger again collapses it.
   const [openSubMenu, setOpenSubMenu] = useState<string | null>(null);
-  const [hoveredAxis, setHoveredAxis] = useState<AxisOption | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const subMenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
 
@@ -194,12 +194,7 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!menuOpen) {
-      setHoveredAxis(null);
-      setOpenSubMenu(null);
-      if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
-      if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
-    }
+    if (!menuOpen) setOpenSubMenu(null);
   }, [menuOpen]);
 
   useEffect(() => {
@@ -211,53 +206,17 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
     return () => window.removeEventListener('pointerdown', close);
   }, [saveMenuOpen]);
 
-  const onMenuItemEnter = useCallback((a: AxisOption, isSubmenuItem = false) => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHoveredAxis(a), 500);
-    // Only top-level items should collapse the submenu when the mouse moves
-    // away from "more...". When the user actually hovers a submenu item we
-    // want it to stay open (otherwise it dismisses itself on entry).
-    if (!isSubmenuItem) {
-      if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
-      setOpenSubMenu(null);
-    }
-  }, []);
-
-  const onMenuItemLeave = useCallback(() => {
-    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
-    setHoveredAxis(null);
-  }, []);
-
-  const onMoreEnter = useCallback((key: string) => {
-    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
-    setHoveredAxis(null);
-    if (subMenuTimer.current) clearTimeout(subMenuTimer.current);
-    subMenuTimer.current = setTimeout(() => setOpenSubMenu(key), 150);
-  }, []);
-
-  const onMoreLeave = useCallback(() => {
-    if (subMenuTimer.current) { clearTimeout(subMenuTimer.current); subMenuTimer.current = null; }
-    setOpenSubMenu(null);
-  }, []);
-
-  // Decide whether the submenu opens downward or upward based on where
-  // its trigger sits in the viewport. When the menu wraps into multiple
-  // columns the Energy/Hazards trigger can land near the top of a later
-  // column; anchoring to bottom would push the submenu off the top edge.
-  // Anchoring downward in that case keeps it visible.
-  const positionSubmenu = useCallback((node: HTMLDivElement | null) => {
+  // When the user expands an accordion group, scroll the freshly-revealed
+  // first sub-item into view. Without this, expanding "Natural Hazards"
+  // near the bottom of a long menu just shoves the new items off-screen
+  // and the user has to chase them with a scroll. `block: 'nearest'`
+  // means we only scroll the minimum needed -- if the items are already
+  // visible (typical when expanding near the top), nothing moves.
+  const firstSubRef = useCallback((node: HTMLButtonElement | null) => {
     if (!node) return;
-    const wrapper = node.parentElement;
-    if (!wrapper) return;
-    const rect = wrapper.getBoundingClientRect();
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    if (rect.top < vh / 2) {
-      node.style.top = '0';
-      node.style.bottom = 'auto';
-    } else {
-      node.style.top = 'auto';
-      node.style.bottom = '0';
-    }
+    requestAnimationFrame(() => {
+      try { node.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+    });
   }, []);
 
   return (
@@ -277,10 +236,8 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
             const renderAxis = (a: AxisOption) => (
               <button
                 key={a.id}
-                className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
-                onClick={() => { onAxisChange(a.id); setMenuOpen(false); }}
-                onMouseEnter={() => onMenuItemEnter(a)}
-                onMouseLeave={onMenuItemLeave}
+                className={`axis-menu-item${a.id === activeAxisId ? ' active' : ''}`}
+                onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
               >
                 <span>{a.label}</span>
                 <span className="axis-menu-right">
@@ -290,38 +247,36 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
               </button>
             );
 
-            const renderSubmenuGroups = () => submenuGroups.map((group) => (
-              <div
-                key={group.key}
-                className="axis-more-wrapper"
-                onMouseEnter={() => onMoreEnter(group.key)}
-                onMouseLeave={onMoreLeave}
-              >
-                <div className="axis-menu-item axis-more-trigger">
+            const renderSubmenuGroups = () => submenuGroups.flatMap((group) => {
+              const isOpen = openSubMenu === group.key;
+              const trigger = (
+                <button
+                  key={`${group.key}-trigger`}
+                  className={`axis-menu-item axis-more-trigger${isOpen ? ' open' : ''}`}
+                  onClick={() => setOpenSubMenu((cur) => cur === group.key ? null : group.key)}
+                  aria-expanded={isOpen}
+                >
                   <span>{group.label}</span>
-                  <span className="axis-menu-right" style={{ fontSize: 11 }}>&#9654;</span>
-                </div>
-                {openSubMenu === group.key && (
-                  <div className="axis-menu axis-submenu" ref={positionSubmenu}>
-                    {group.items!.map((a) => (
-                      <button
-                        key={a.id}
-                        className={a.id === activeAxisId ? 'axis-menu-item active' : 'axis-menu-item'}
-                        onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
-                        onMouseEnter={() => onMenuItemEnter(a, true)}
-                        onMouseLeave={onMenuItemLeave}
-                      >
-                        <span>{a.label}</span>
-                        <span className="axis-menu-right">
-                          <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
-                          {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ));
+                  <span className="axis-menu-right axis-more-chevron">{isOpen ? '\u25BE' : '\u25B8'}</span>
+                </button>
+              );
+              if (!isOpen) return [trigger];
+              const subItems = group.items!.map((a, idx) => (
+                <button
+                  key={a.id}
+                  ref={idx === 0 ? firstSubRef : undefined}
+                  className={`axis-menu-item axis-menu-subitem${a.id === activeAxisId ? ' active' : ''}`}
+                  onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                >
+                  <span>{a.label}</span>
+                  <span className="axis-menu-right">
+                    <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
+                    {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
+                  </span>
+                </button>
+              ));
+              return [trigger, ...subItems];
+            });
 
             // Submenus go right before the "draw" item so the menu reads:
             // ...wind, Energy..., Natural Hazards..., DRAW. If there is
@@ -376,28 +331,6 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
       </div>
 
       {shareOpen && <ShareModal onClose={() => setShareOpen(false)} onBuildReadonlyLink={onBuildReadonlyLink} />}
-
-      {hoveredAxis && hoveredAxis.description && (
-        <div className="axis-info-tooltip">
-          <div className="axis-info-title">{hoveredAxis.label}</div>
-          <div className="axis-info-row">
-            <span className="axis-info-label">What it shows</span>
-            <span className="axis-info-text">{hoveredAxis.description}</span>
-          </div>
-          {hoveredAxis.unitDescription && (
-            <div className="axis-info-row">
-              <span className="axis-info-label">Units</span>
-              <span className="axis-info-text">{hoveredAxis.unitDescription}</span>
-            </div>
-          )}
-          {hoveredAxis.source && (
-            <div className="axis-info-row">
-              <span className="axis-info-label">Source</span>
-              <span className="axis-info-text">{hoveredAxis.source}</span>
-            </div>
-          )}
-        </div>
-      )}
     </>
   );
 }

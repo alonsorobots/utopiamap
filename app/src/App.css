@@ -279,6 +279,14 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  /* Reserve space for the scrollbar even when it's not needed so
+   * expanding an accordion (Energy / Natural Hazards) doesn't suddenly
+   * carve a vertical strip out of the right side of every existing
+   * item. The thumb itself only appears when the content actually
+   * overflows -- it just fades in inside its pre-allocated gutter. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
   background: rgba(24, 24, 32, 0.96);
   backdrop-filter: blur(16px);
   border-radius: 10px;
@@ -286,6 +294,28 @@
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   padding: 4px;
   z-index: 30;
+}
+
+/* WebKit (Safari + Chromium) needs explicit pseudo-element styling --
+ * `scrollbar-color` only covers Firefox. We keep it skinny, transparent
+ * track, and use the same translucent-white thumb so it reads as part
+ * of the dark glass panel rather than a default OS chrome strip. */
+.axis-menu::-webkit-scrollbar {
+  width: 8px;
+}
+.axis-menu::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 6px 0;
+}
+.axis-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.axis-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+  background-clip: padding-box;
 }
 
 .axis-menu-item {

@@ -1791,21 +1791,27 @@ export default function App() {
     } catch {}
   }, [activeAxis, mapLoaded]);
 
-  // Push local axis / formula into the shared collab doc whenever they
-  // change. Y.Map.set is a no-op when the value already matches, so
-  // this also harmlessly re-fires after a remote update without
-  // bouncing back. When collab.roomId flips (new session) we also seed
-  // the room with our current curves/units so a freshly-shared link
-  // shows the creator's tunings rather than a blank slate. We also
-  // mirror the axis into our awareness state so peers see "Bob -- elev"
-  // on their presence chip.
+  // Push local axis into the shared collab doc whenever it changes.
+  // Y.Map.set is a no-op when the value already matches, so this also
+  // harmlessly re-fires after a remote update without bouncing back.
+  // When collab.roomId flips (new session) we also seed the room with
+  // our current curves/units so a freshly-shared link shows the
+  // creator's tunings rather than a blank slate. We also mirror the
+  // axis into our awareness state so peers see "Bob -- elev" on their
+  // presence chip.
+  //
+  // Note: formula is published only on COMMIT (Enter / blur via the
+  // FormulaBar.onFormulaCommit callback), not on every keystroke --
+  // typing "tem" would otherwise leak three intermediate broadcasts
+  // and burn through the Workers free-plan budget.
   useEffect(() => {
     collab.publishView({ axis: activeAxis });
     collab.publishAxis(activeAxis);
   }, [activeAxis, collab]);
-  useEffect(() => {
-    collab.publishView({ formula });
-  }, [formula, collab]);
+
+  const handleFormulaCommit = useCallback((f: string) => {
+    collab.publishView({ formula: f });
+  }, [collab]);
   useEffect(() => {
     if (!collab.roomId) return;
     // One-shot seed when a session starts. Subsequent edits flow
@@ -2378,6 +2384,7 @@ export default function App() {
         onAxisChange={handleAxisChange}
         formula={formula}
         onFormulaChange={handleFormulaChange}
+        onFormulaCommit={handleFormulaCommit}
         onFormulaSelectionChange={handleFormulaSelectionChange}
         onFormulaIdentDoubleClick={handleFormulaIdentDoubleClick}
         formulaError={formulaError}

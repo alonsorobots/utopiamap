@@ -22,6 +22,10 @@ interface TopBarProps {
   onAxisChange: (id: string) => void;
   formula: string;
   onFormulaChange: (f: string) => void;
+  /** Fires only when the user commits the edit (Enter / blur). Used
+   *  by the parent to rebroadcast the formula to collab peers without
+   *  spamming on every keystroke. */
+  onFormulaCommit?: (f: string) => void;
   onFormulaSelectionChange?: (sel: string | null) => void;
   onFormulaIdentDoubleClick?: (text: string) => void;
   formulaError?: string | null;
@@ -233,7 +237,7 @@ function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUr
 
 // ── TopBar ───────────────────────────────────────────────────────────
 
-export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink, collabEnabled, collabShareUrl, onStartCollab }: TopBarProps) {
+export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaCommit, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink, collabEnabled, collabShareUrl, onStartCollab }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
@@ -360,6 +364,7 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
           <FormulaBar
             formula={formula}
             onFormulaChange={onFormulaChange}
+            onFormulaCommit={onFormulaCommit}
             onSelectionChange={onFormulaSelectionChange}
             onIdentDoubleClick={onFormulaIdentDoubleClick}
             placeholder="e.g. temp + water / pop"

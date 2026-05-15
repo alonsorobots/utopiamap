@@ -33,6 +33,14 @@ interface FormulaBarProps {
    *  for resolving aliases. */
   onIdentDoubleClick?: (text: string) => void;
   /**
+   * Fires only when the user *commits* an edit -- pressing Enter or
+   * blurring the input. onFormulaChange still fires on every keystroke
+   * for live local feedback (heatmap, syntax highlighting, error
+   * detection); use onFormulaCommit when the receiver is something
+   * expensive or external, e.g. a collab broadcast.
+   */
+  onFormulaCommit?: (f: string) => void;
+  /**
    * Ordered list of canonical axis ids, ranked by how likely the user is
    * to reach for them (the same order driving the menu / arrow-key cycle).
    * Used purely to rank autocomplete suggestions.
@@ -55,6 +63,7 @@ export function FormulaBar({
   error,
   onSelectionChange,
   onIdentDoubleClick,
+  onFormulaCommit,
   axisOrder,
 }: FormulaBarProps) {
   const [editing, setEditing] = useState(false);
@@ -152,7 +161,10 @@ export function FormulaBar({
   const exitEdit = useCallback(() => {
     setEditing(false);
     onSelectionChange?.(null);
-  }, [onSelectionChange]);
+    // Commit the current value so peers/external listeners see the
+    // final state without having had to track every keystroke.
+    onFormulaCommit?.(formulaRef.current);
+  }, [onSelectionChange, onFormulaCommit]);
 
   const handleSelect = useCallback((e: React.SyntheticEvent<HTMLInputElement, Event>) => {
     const target = e.target as HTMLInputElement;
@@ -187,8 +199,9 @@ export function FormulaBar({
     if (e.key === 'Enter') {
       e.preventDefault();
       setEditing(false);
+      onFormulaCommit?.(formulaRef.current);
     }
-  }, [suggestion, acceptSuggestion]);
+  }, [suggestion, acceptSuggestion, onFormulaCommit]);
 
   const onInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     onFormulaChange(e.target.value);

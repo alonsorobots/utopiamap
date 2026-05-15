@@ -190,8 +190,8 @@ function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUr
               </div>
               <div className="share-option-desc">
                 {collabShareUrl
-                  ? 'You are already in a room -- this copies the link so others can join. Everyone sees the same axis, formula and year in real time.'
-                  : 'Generates a link anyone can open to join this session. All connected browsers see the same axis, formula and year in real time.'}
+                  ? 'You are already in a room -- this copies the link so others can join. Everyone sees the same axis, formula, year and tuned curves in real time (no live cursors).'
+                  : 'Generates a link anyone can open to join this session. All connected browsers stay in lock-step on axis, formula, year and tuned curves in real time (no live cursors).'}
               </div>
             </div>
             <span className="share-copy-btn">

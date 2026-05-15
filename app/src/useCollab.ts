@@ -47,7 +47,12 @@ export interface UseCollabResult {
   startSession: () => string | null;
   endSession: () => void;
   publishView: (patch: SharedView) => void;
-  publishCursor: (lngLat: { lng: number; lat: number } | null, axis?: string) => void;
+  // Update the "I'm currently looking at this axis" presence chip.
+  // Awareness-only; no cursor coordinates are sent (we deliberately
+  // dropped per-pixel cursor sharing to stay inside the Workers free
+  // plan -- the per-frame mousemove broadcast was the only thing
+  // that put real load on the relay).
+  publishAxis: (axis: string) => void;
 }
 
 export function useCollab(sinks: CollabSinks): UseCollabResult {
@@ -152,10 +157,10 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
     c.applyLocalView(patch);
   }, []);
 
-  const publishCursor = useCallback((lngLat: { lng: number; lat: number } | null, axis?: string) => {
+  const publishAxis = useCallback((axis: string) => {
     const c = collabRef.current;
     if (!c) return;
-    c.setLocalCursor(lngLat?.lng ?? null, lngLat?.lat ?? null, axis);
+    c.setLocalAxis(axis);
   }, []);
 
   const shareUrl = useMemo(() => {
@@ -172,6 +177,6 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
     startSession,
     endSession,
     publishView,
-    publishCursor,
+    publishAxis,
   };
 }

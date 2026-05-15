@@ -31,7 +31,7 @@ import type { AxisOption } from './TopBar';
 import { decodeStateFromHash, encodeStateToHash, isShareHash } from './shareLink';
 import type { ShareableState } from './shareLink';
 import { useCollab } from './useCollab';
-import { CollabBar, CollabCursors } from './CollabUI';
+import { CollabBar } from './CollabUI';
 import './App.css';
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -1791,15 +1791,17 @@ export default function App() {
     } catch {}
   }, [activeAxis, mapLoaded]);
 
-  // Push local axis / formula / cursor-axis into the shared collab doc
-  // whenever they change. Y.Map.set is a no-op when the value already
-  // matches, so this also harmlessly re-fires after a remote update without
+  // Push local axis / formula into the shared collab doc whenever they
+  // change. Y.Map.set is a no-op when the value already matches, so
+  // this also harmlessly re-fires after a remote update without
   // bouncing back. When collab.roomId flips (new session) we also seed
   // the room with our current curves/units so a freshly-shared link
-  // shows the creator's tunings rather than a blank slate.
+  // shows the creator's tunings rather than a blank slate. We also
+  // mirror the axis into our awareness state so peers see "Bob -- elev"
+  // on their presence chip.
   useEffect(() => {
     collab.publishView({ axis: activeAxis });
-    collab.publishCursor(null, activeAxis);
+    collab.publishAxis(activeAxis);
   }, [activeAxis, collab]);
   useEffect(() => {
     collab.publishView({ formula });
@@ -2007,14 +2009,34 @@ export default function App() {
     return `${base}#${hash}`;
   }, [formula]);
 
+  // Debounce curve + year publishes: dragging a curve point or
+  // scrubbing the timeline fires the change handler on every pointer
+  // pixel (60fps), and each call to collab.publishView is a billable
+  // Workers request on the free plan. 300ms idle = "user finished
+  // dragging" in practice; the local heatmap still updates live, only
+  // the peer broadcast is delayed.
+  const collabCurvePushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handlePointsChange = useCallback((axisId: string, points: CurvePoint[]) => {
     curveStatesRef.current[axisId] = points;
     triggerSave();
-    // Broadcast to peers. We send the WHOLE curves map (not just the
-    // changed axis) because Y.Map.set replaces the value -- partial
-    // patches would clobber other peers' edits to other axes.
-    collab.publishView({ curves: { ...curveStatesRef.current } });
+    if (collabCurvePushTimer.current != null) clearTimeout(collabCurvePushTimer.current);
+    collabCurvePushTimer.current = setTimeout(() => {
+      collabCurvePushTimer.current = null;
+      // We send the WHOLE curves map (not just the changed axis)
+      // because Y.Map.set replaces the value -- partial patches would
+      // clobber other peers' edits to other axes.
+      collab.publishView({ curves: { ...curveStatesRef.current } });
+    }, 300);
   }, [triggerSave, collab]);
+
+  const collabYearPushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publishYearDebounced = useCallback((year: number, scenario: string) => {
+    if (collabYearPushTimer.current != null) clearTimeout(collabYearPushTimer.current);
+    collabYearPushTimer.current = setTimeout(() => {
+      collabYearPushTimer.current = null;
+      collab.publishView({ year, scenario });
+    }, 300);
+  }, [collab]);
 
   const handleUnitChange = useCallback((axisId: string, unit: string) => {
     unitStatesRef.current[axisId] = unit;
@@ -2244,13 +2266,11 @@ export default function App() {
       const { lng, lat } = e.lngLat;
       lastMapPointRef.current = { lng, lat, px: e.point.x, py: e.point.y };
       computeHoverText(lng, lat, e.point.x, e.point.y);
-      collab.publishCursor({ lng, lat }, activeAxisRef.current);
     }
 
     function onLeave() {
       lastMapPointRef.current = null;
       setHoverInfo(null);
-      collab.publishCursor(null, activeAxisRef.current);
     }
 
     map.on('mousemove', onMove);
@@ -2378,7 +2398,6 @@ export default function App() {
         roomId={collab.roomId}
         onEnd={collab.endSession}
       />
-      <CollabCursors map={mapRef.current} peers={collab.peers} />
 
       {isShareView && (
         <div className="shared-session-pill" title="You are viewing a snapshot from a shared link. Your own session is untouched.">
@@ -2406,7 +2425,7 @@ export default function App() {
       {mapLoaded && activeAxis !== 'draw' && (
         <TimePanel
           ref={timePanelRef}
-          onTimeChange={(y, s) => { setTimeYear(y, s); triggerSave(); collab.publishView({ year: y, scenario: s }); }}
+          onTimeChange={(y, s) => { setTimeYear(y, s); triggerSave(); publishYearDebounced(y, s); }}
           disabled={!isAxisTemporal(activeAxis)}
           initialYear={saved?.year}
           overrideYear={AXES[activeAxis]?.staticYear}

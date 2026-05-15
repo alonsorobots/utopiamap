@@ -1,69 +1,16 @@
 // UI bits for real-time collaboration.
 //
-//   - <CollabCursors>  draws each peer's mouse cursor on top of the map,
-//     reprojected from their lng/lat into the local viewport.
-//   - <CollabBar>      compact strip with the share button, presence
-//     count, and a stack of avatar dots so you can see who's connected.
+//   - <CollabBar>  compact strip with the presence count and a stack
+//     of avatar dots so you can see who's connected. Only renders
+//     while you're actually inside a room.
 //
-// Both components are render-only -- session lifecycle and state sync
-// live in useCollab.ts so the components can be swapped out (tooltips,
-// fancier presence list, etc.) without touching the protocol layer.
+// Per-pixel mouse cursor sharing was removed deliberately to stay
+// inside the Cloudflare Workers free plan (100k requests/day) -- the
+// mousemove broadcast was the only thing that put real load on the
+// relay. Awareness still flows for join/leave + name + active axis,
+// which is enough for "we're looking at the same map together".
 
-import { useEffect, useState } from 'react';
-import type maplibregl from 'maplibre-gl';
 import type { CollabStatus, PeerCursor } from './collab';
-
-interface CursorsProps {
-  map: maplibregl.Map | null;
-  peers: PeerCursor[];
-}
-
-export function CollabCursors({ map, peers }: CursorsProps) {
-  // Re-render on every map move so projected positions track the camera.
-  const [, bump] = useState(0);
-  useEffect(() => {
-    if (!map) return;
-    const onMove = () => bump((n) => n + 1);
-    map.on('move', onMove);
-    map.on('zoom', onMove);
-    return () => {
-      map.off('move', onMove);
-      map.off('zoom', onMove);
-    };
-  }, [map]);
-
-  if (!map) return null;
-
-  return (
-    <div className="collab-cursor-layer">
-      {peers.map((p) => {
-        if (!Number.isFinite(p.lng) || !Number.isFinite(p.lat)) return null;
-        const pt = map.project([p.lng, p.lat]);
-        if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
-        return (
-          <div
-            key={p.clientId}
-            className="collab-cursor"
-            style={{ left: pt.x, top: pt.y }}
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-              <path
-                d="M2 2 L2 16 L6.5 12 L9.2 18.5 L11.7 17.5 L9 11 L14.5 11 Z"
-                fill={p.color}
-                stroke="rgba(0,0,0,0.55)"
-                strokeWidth="0.7"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span className="collab-cursor-name" style={{ background: p.color }}>
-              {p.name}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 interface BarProps {
   enabled: boolean;

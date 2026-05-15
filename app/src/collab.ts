@@ -28,6 +28,12 @@ const MSG_AWARENESS = 1;
 const RECONNECT_MIN = 500;
 const RECONNECT_MAX = 15_000;
 
+// Minimum gap between cursor-position broadcasts. Each one is a
+// billable Workers request on the free plan, so we cap at 10 frames
+// per second; visually indistinguishable from the raw mousemove rate
+// but ~6x cheaper.
+const CURSOR_THROTTLE_MS = 100;
+
 const COLOR_PALETTE = [
   '#f87171', '#fb923c', '#facc15', '#4ade80', '#34d399',
   '#22d3ee', '#60a5fa', '#a78bfa', '#f472b6', '#e879f9',
@@ -105,6 +111,11 @@ export class Collab {
   private isPublishing: boolean;
   private pendingPatch: SharedView = {};
   private aloneTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Cursor coalescing state (see setLocalCursor for the rationale).
+  private cursorPending: { lng: number | null; lat: number | null; axis?: string } | null = null;
+  private cursorTimer: ReturnType<typeof setTimeout> | null = null;
+  private cursorLastSent = 0;
 
   constructor(roomBaseUrl: string, roomId: string, opts: { joining: boolean } = { joining: false }) {
     this.doc = new Y.Doc();
@@ -208,14 +219,58 @@ export class Collab {
   }
 
   setLocalCursor(lng: number | null, lat: number | null, axis?: string) {
+    // Cloudflare Workers' free plan caps the worker at 100k requests
+    // a day, and EVERY message we send to the relay counts as one
+    // request. mousemove fires ~60 times a second whenever you hover
+    // over the map, so without this guard a single user can burn
+    // through the daily budget in under 30 minutes (which is exactly
+    // how the worker ended up returning 429 / "error code: 1027" on
+    // 2026-05-15). Two-pronged fix:
+    //
+    //   1. When nobody else is in the room there's nothing to relay,
+    //      so skip the broadcast entirely. We update the local axis
+    //      field via a separate write (no cursor coords) only on the
+    //      first call so peers who join later still see which axis
+    //      we're on; subsequent moves are silent until they arrive.
+    //   2. When peers ARE here, coalesce rapid moves to ~10 cursor
+    //      frames per second. The local user can't see lag in their
+    //      own cursor anyway, and 10 fps is plenty smooth for peers.
+    const havePeers = this.awareness.getStates().size > 1;
+    this.cursorPending = { lng, lat, axis: axis ?? this.cursorPending?.axis };
+
+    if (!havePeers) {
+      // Stash the latest move locally; we only call setLocalState
+      // when the axis actually changes, so an idle hover doesn't
+      // generate any awareness traffic.
+      const cur = (this.awareness.getLocalState() ?? {}) as Record<string, unknown>;
+      const curAxis = typeof cur.axis === 'string' ? cur.axis : undefined;
+      if (axis !== undefined && axis !== curAxis) {
+        this.awareness.setLocalState({ ...cur, axis });
+      }
+      return;
+    }
+
+    if (this.cursorTimer != null) return;
+    const wait = Math.max(0, CURSOR_THROTTLE_MS - (Date.now() - this.cursorLastSent));
+    this.cursorTimer = setTimeout(() => this.flushCursor(), wait);
+  }
+
+  private flushCursor() {
+    this.cursorTimer = null;
+    const pending = this.cursorPending;
+    if (!pending) return;
+    // Re-check peers: a flush queued while peers were present can
+    // still fire after the last peer left.
+    if (this.awareness.getStates().size <= 1) return;
+    this.cursorLastSent = Date.now();
     const cur = (this.awareness.getLocalState() ?? {}) as Record<string, unknown>;
     const next: Record<string, unknown> = { ...cur };
-    if (lng === null || lat === null) {
+    if (pending.lng === null || pending.lat === null) {
       delete next.cursor;
     } else {
-      next.cursor = { lng, lat };
+      next.cursor = { lng: pending.lng, lat: pending.lat };
     }
-    if (axis !== undefined) next.axis = axis;
+    if (pending.axis !== undefined) next.axis = pending.axis;
     this.awareness.setLocalState(next);
   }
 
@@ -236,6 +291,10 @@ export class Collab {
     if (this.aloneTimeout != null) {
       clearTimeout(this.aloneTimeout);
       this.aloneTimeout = null;
+    }
+    if (this.cursorTimer != null) {
+      clearTimeout(this.cursorTimer);
+      this.cursorTimer = null;
     }
     awarenessProtocol.removeAwarenessStates(
       this.awareness, [this.doc.clientID], 'local',
@@ -366,7 +425,12 @@ export class Collab {
         if (id === this.doc.clientID) continue;
         if (!beforeIds.has(id)) { sawNewPeer = true; break; }
       }
-      if (sawNewPeer) this.republishOwnAwareness();
+      if (sawNewPeer) {
+        this.republishOwnAwareness();
+        // Flush any pending cursor immediately so the joiner sees us
+        // hovering instead of having to wait for our next mousemove.
+        if (this.cursorPending) this.flushCursor();
+      }
     }
   }
 

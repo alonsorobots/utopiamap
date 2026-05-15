@@ -690,6 +690,21 @@
   vertical-align: middle;
 }
 
+/* Same shape as the "coming soon" pill but tinted green so the user
+ * can see at a glance whether their tab is currently broadcasting. */
+.share-live-pill {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(74, 222, 128, 0.18);
+  color: rgba(134, 239, 172, 0.95);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .share-copy-btn-disabled {
   opacity: 0.6;
 }

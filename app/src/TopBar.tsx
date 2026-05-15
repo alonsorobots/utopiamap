@@ -32,6 +32,17 @@ interface TopBarProps {
   onSaveFile?: () => void;
   onLoadFile?: () => void;
   onBuildReadonlyLink?: () => Promise<string>;
+  /** True iff the collab worker is reachable (VITE_COLLAB_URL is set
+   *  and the build is configured for it). When false the share modal
+   *  shows the collab option as "coming soon" rather than letting
+   *  users copy a link that won't actually connect to anything. */
+  collabEnabled: boolean;
+  /** Pre-built share URL when the user is already inside a room.
+   *  Falsy means "no room yet -- create one via onStartCollab first". */
+  collabShareUrl: string | null;
+  /** Generate a fresh room id, push it onto the URL, and start the
+   *  WebSocket session. Returns the new room id. */
+  onStartCollab?: () => string | null;
 }
 
 function HamburgerIcon() {
@@ -93,11 +104,14 @@ function CheckIcon() {
 
 // ── Share modal ──────────────────────────────────────────────────────
 
-function ShareModal({ onClose, onBuildReadonlyLink }: {
+function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUrl, onStartCollab }: {
   onClose: () => void;
   onBuildReadonlyLink?: () => Promise<string>;
+  collabEnabled: boolean;
+  collabShareUrl: string | null;
+  onStartCollab?: () => string | null;
 }) {
-  const [copied, setCopied] = useState<'readonly' | null>(null);
+  const [copied, setCopied] = useState<'readonly' | 'collab' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -132,26 +146,75 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
     }
   };
 
+  // Excalidraw-style: tap once -> the modal generates a room, joins it,
+  // and copies the URL to the clipboard. If you're already in a room
+  // (e.g. someone shared a link with you), it just copies the link you
+  // already have so you can pass it along.
+  const copyCollabLink = async () => {
+    if (!collabEnabled || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let url = collabShareUrl;
+      if (!url && onStartCollab) {
+        onStartCollab();
+        // useCollab sets the room id synchronously inside startSession,
+        // so by the time React re-renders the share URL is already
+        // available. Compute it here without waiting on the next render.
+        if (typeof window !== 'undefined') {
+          url = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+        }
+      }
+      if (!url) throw new Error('Could not start a session');
+      await navigator.clipboard.writeText(url);
+      setCopied('collab');
+      setTimeout(() => setCopied(null), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start collab');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="share-backdrop">
       <div className="share-modal" ref={modalRef}>
         <div className="share-modal-title">Share this session</div>
 
-        <button className="share-option share-option-disabled" disabled title="Real-time collab is coming soon">
-          <div className="share-option-info">
-            <div className="share-option-label">
-              Collaboration link
-              <span className="share-coming-soon">coming soon</span>
+        {collabEnabled ? (
+          <button className="share-option" onClick={copyCollabLink} disabled={busy}>
+            <div className="share-option-info">
+              <div className="share-option-label">
+                Collaboration link
+                {collabShareUrl && <span className="share-live-pill">live</span>}
+              </div>
+              <div className="share-option-desc">
+                {collabShareUrl
+                  ? 'You are already in a room -- this copies the link so others can join. Everyone sees the same axis, formula and year in real time.'
+                  : 'Generates a link anyone can open to join this session. All connected browsers see the same axis, formula and year in real time.'}
+              </div>
             </div>
-            <div className="share-option-desc">Anyone with this link will be able to view and edit preferences together in real-time</div>
-          </div>
-          <span className="share-copy-btn share-copy-btn-disabled"><CopyIcon /></span>
-        </button>
+            <span className="share-copy-btn">
+              {copied === 'collab' ? <CheckIcon /> : <CopyIcon />}
+            </span>
+          </button>
+        ) : (
+          <button className="share-option share-option-disabled" disabled title="Real-time collab is coming soon">
+            <div className="share-option-info">
+              <div className="share-option-label">
+                Collaboration link
+                <span className="share-coming-soon">coming soon</span>
+              </div>
+              <div className="share-option-desc">Anyone with this link will be able to view and edit preferences together in real-time.</div>
+            </div>
+            <span className="share-copy-btn share-copy-btn-disabled"><CopyIcon /></span>
+          </button>
+        )}
 
         <button className="share-option" onClick={copyReadonlyLink} disabled={busy || !onBuildReadonlyLink}>
           <div className="share-option-info">
             <div className="share-option-label">Read-only link</div>
-            <div className="share-option-desc">Anyone with this link can view your exact preferences, formula, axis, view and year. The link contains the data, so nothing is sent to a server.</div>
+            <div className="share-option-desc">Anyone with this link sees your exact preferences, formula, axis, view and year as a static snapshot. The link encodes everything; nothing reaches our servers.</div>
           </div>
           <span className="share-copy-btn">
             {copied === 'readonly' ? <CheckIcon /> : <CopyIcon />}
@@ -161,7 +224,7 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
         <div className="share-privacy">
           {error
             ? `Error: ${error}`
-            : 'No accounts, no tracking, no servers storing your data. Your whole session lives only in your browser and inside the link itself.'}
+            : 'No accounts, no tracking. Read-only links carry the whole session inside the URL -- nothing reaches our servers. Collaboration links route through a tiny relay that forwards changes between connected browsers in real time and stores nothing -- when everyone closes the tab the room evaporates from memory.'}
         </div>
       </div>
     </div>
@@ -170,7 +233,7 @@ function ShareModal({ onClose, onBuildReadonlyLink }: {
 
 // ── TopBar ───────────────────────────────────────────────────────────
 
-export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink }: TopBarProps) {
+export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink, collabEnabled, collabShareUrl, onStartCollab }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
@@ -330,7 +393,15 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
         </div>
       </div>
 
-      {shareOpen && <ShareModal onClose={() => setShareOpen(false)} onBuildReadonlyLink={onBuildReadonlyLink} />}
+      {shareOpen && (
+        <ShareModal
+          onClose={() => setShareOpen(false)}
+          onBuildReadonlyLink={onBuildReadonlyLink}
+          collabEnabled={collabEnabled}
+          collabShareUrl={collabShareUrl}
+          onStartCollab={onStartCollab}
+        />
+      )}
     </>
   );
 }

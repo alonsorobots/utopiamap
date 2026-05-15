@@ -2316,6 +2316,9 @@ export default function App() {
         onSaveFile={handleSaveFile}
         onLoadFile={handleLoadFile}
         onBuildReadonlyLink={buildReadonlyShareLink}
+        collabEnabled={collab.enabled}
+        collabShareUrl={collab.shareUrl}
+        onStartCollab={collab.startSession}
       />
 
       <CollabBar

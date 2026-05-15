@@ -345,13 +345,42 @@ export class Collab {
         this.send(encoding.toUint8Array(reply));
       }
     } else if (messageType === MSG_AWARENESS) {
+      const beforeIds = new Set(this.awareness.getStates().keys());
       awarenessProtocol.applyAwarenessUpdate(
         this.awareness,
         decoding.readVarUint8Array(decoder),
         'remote',
       );
       this.fanOutCursors();
+      // If this awareness brought us a peer we hadn't seen before,
+      // re-broadcast our own awareness so they can see *us*. Without
+      // this, a late joiner stays invisible to the existing peers
+      // forever (we sent our awareness once on WebSocket open, but
+      // the room was empty then so it went to the void). Y.Awareness
+      // is clock-gated, so the round-trip terminates -- the joiner
+      // already has our latest clock for ourselves and discards the
+      // duplicate idempotently.
+      const afterIds = this.awareness.getStates().keys();
+      let sawNewPeer = false;
+      for (const id of afterIds) {
+        if (id === this.doc.clientID) continue;
+        if (!beforeIds.has(id)) { sawNewPeer = true; break; }
+      }
+      if (sawNewPeer) this.republishOwnAwareness();
     }
+  }
+
+  // Encode our own awareness (and only our own) and send it. Used to
+  // greet late joiners so they don't have to wait for us to wiggle the
+  // mouse before they can see our presence.
+  private republishOwnAwareness() {
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, MSG_AWARENESS);
+    encoding.writeVarUint8Array(
+      enc,
+      awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID]),
+    );
+    this.send(encoding.toUint8Array(enc));
   }
 
   // ── Cursor fan-out ───────────────────────────────────────────────

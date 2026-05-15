@@ -36,6 +36,12 @@ interface TopBarProps {
   onSaveFile?: () => void;
   onLoadFile?: () => void;
   onBuildReadonlyLink?: () => Promise<string>;
+  /** Build a hybrid collab link: a `#view=<snapshot>&room=<id>` URL
+   *  that carries both the live room id AND a static snapshot of the
+   *  current state. The static snapshot is the fallback if the worker
+   *  is rate-limited or unreachable, so a recipient always sees
+   *  *something*. */
+  onBuildCollabLink?: () => Promise<string>;
   /** True iff the collab worker is reachable (VITE_COLLAB_URL is set
    *  and the build is configured for it). When false the share modal
    *  shows the collab option as "coming soon" rather than letting
@@ -44,6 +50,10 @@ interface TopBarProps {
   /** Pre-built share URL when the user is already inside a room.
    *  Falsy means "no room yet -- create one via onStartCollab first". */
   collabShareUrl: string | null;
+  /** Set when the live worker is unreachable / rate-limited so the
+   *  share modal can swap the collab button for a friendly explanation
+   *  instead of letting users copy a link that just won't work. */
+  collabError?: 'rate-limited' | 'unavailable' | null;
   /** Generate a fresh room id, push it onto the URL, and start the
    *  WebSocket session. Returns the new room id. */
   onStartCollab?: () => string | null;
@@ -108,11 +118,13 @@ function CheckIcon() {
 
 // ── Share modal ──────────────────────────────────────────────────────
 
-function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUrl, onStartCollab }: {
+function ShareModal({ onClose, onBuildReadonlyLink, onBuildCollabLink, collabEnabled, collabShareUrl, collabError, onStartCollab }: {
   onClose: () => void;
   onBuildReadonlyLink?: () => Promise<string>;
+  onBuildCollabLink?: () => Promise<string>;
   collabEnabled: boolean;
   collabShareUrl: string | null;
+  collabError?: 'rate-limited' | 'unavailable' | null;
   onStartCollab?: () => string | null;
 }) {
   const [copied, setCopied] = useState<'readonly' | 'collab' | null>(null);
@@ -152,21 +164,27 @@ function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUr
 
   // Excalidraw-style: tap once -> the modal generates a room, joins it,
   // and copies the URL to the clipboard. If you're already in a room
-  // (e.g. someone shared a link with you), it just copies the link you
-  // already have so you can pass it along.
+  // (e.g. someone shared a link with you), it just reuses that room.
+  // The link itself is *hybrid* (`#view=...&room=...`), so even if the
+  // worker is down or rate-limited the recipient still sees the
+  // current snapshot.
   const copyCollabLink = async () => {
-    if (!collabEnabled || busy) return;
+    if (!collabEnabled || busy || collabError) return;
     setBusy(true);
     setError(null);
     try {
-      let url = collabShareUrl;
-      if (!url && onStartCollab) {
-        onStartCollab();
-        // useCollab sets the room id synchronously inside startSession,
-        // so by the time React re-renders the share URL is already
-        // available. Compute it here without waiting on the next render.
-        if (typeof window !== 'undefined') {
-          url = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+      let url: string | null = null;
+      if (onBuildCollabLink) {
+        url = await onBuildCollabLink();
+      } else {
+        // Defensive fallback: if the parent didn't wire the hybrid
+        // builder for some reason, fall back to the live-only link.
+        url = collabShareUrl;
+        if (!url && onStartCollab) {
+          onStartCollab();
+          if (typeof window !== 'undefined') {
+            url = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+          }
         }
       }
       if (!url) throw new Error('Could not start a session');
@@ -180,12 +198,19 @@ function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUr
     }
   };
 
+  const collabBlocked = collabEnabled && !!collabError;
+  const collabBlockedMsg = collabError === 'rate-limited'
+    ? 'The live relay just rate-limited this tab. Send the read-only link below instead -- it carries the whole snapshot and works without the relay.'
+    : collabError === 'unavailable'
+      ? 'The live relay is unreachable right now. Send the read-only link below instead -- it works without the relay.'
+      : null;
+
   return (
     <div className="share-backdrop">
       <div className="share-modal" ref={modalRef}>
         <div className="share-modal-title">Share this session</div>
 
-        {collabEnabled ? (
+        {collabEnabled && !collabBlocked ? (
           <button className="share-option" onClick={copyCollabLink} disabled={busy}>
             <div className="share-option-info">
               <div className="share-option-label">
@@ -194,13 +219,24 @@ function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUr
               </div>
               <div className="share-option-desc">
                 {collabShareUrl
-                  ? 'You are already in a room -- this copies the link so others can join. Everyone sees the same axis, formula, year and tuned curves in real time (no live cursors).'
-                  : 'Generates a link anyone can open to join this session. All connected browsers stay in lock-step on axis, formula, year and tuned curves in real time (no live cursors).'}
+                  ? 'You are already in a room -- this copies the link so others can join. Everyone sees the same axis, formula, year and tuned curves in real time (no live cursors). The link also bakes in a snapshot so it still works if the relay is offline.'
+                  : 'Generates a link anyone can open to join this session. All connected browsers stay in lock-step on axis, formula, year and tuned curves in real time (no live cursors). The link also bakes in a snapshot so it still works if the relay is offline.'}
               </div>
             </div>
             <span className="share-copy-btn">
               {copied === 'collab' ? <CheckIcon /> : <CopyIcon />}
             </span>
+          </button>
+        ) : collabBlocked ? (
+          <button className="share-option share-option-disabled" disabled title={collabBlockedMsg ?? undefined}>
+            <div className="share-option-info">
+              <div className="share-option-label">
+                Collaboration link
+                <span className="share-coming-soon">{collabError === 'rate-limited' ? 'rate limited' : 'unavailable'}</span>
+              </div>
+              <div className="share-option-desc">{collabBlockedMsg}</div>
+            </div>
+            <span className="share-copy-btn share-copy-btn-disabled"><CopyIcon /></span>
           </button>
         ) : (
           <button className="share-option share-option-disabled" disabled title="Real-time collab is coming soon">
@@ -237,7 +273,7 @@ function ShareModal({ onClose, onBuildReadonlyLink, collabEnabled, collabShareUr
 
 // ── TopBar ───────────────────────────────────────────────────────────
 
-export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaCommit, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink, collabEnabled, collabShareUrl, onStartCollab }: TopBarProps) {
+export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxisChange, formula, onFormulaChange, onFormulaCommit, onFormulaSelectionChange, onFormulaIdentDoubleClick, formulaError, formulaAxisOrder, repoUrl, onSaveFile, onLoadFile, onBuildReadonlyLink, onBuildCollabLink, collabEnabled, collabShareUrl, collabError, onStartCollab }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
@@ -402,8 +438,10 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
         <ShareModal
           onClose={() => setShareOpen(false)}
           onBuildReadonlyLink={onBuildReadonlyLink}
+          onBuildCollabLink={onBuildCollabLink}
           collabEnabled={collabEnabled}
           collabShareUrl={collabShareUrl}
+          collabError={collabError}
           onStartCollab={onStartCollab}
         />
       )}

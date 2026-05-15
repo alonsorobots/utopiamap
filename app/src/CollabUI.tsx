@@ -53,6 +53,8 @@ export function CollabBar({ enabled, status, peers, roomId, onEnd }: BarProps) {
 }
 
 function statusLabel(s: CollabStatus): string {
+  if (s.error === 'rate-limited') return 'rate limited (this tab sent too many updates -- reload to reconnect)';
+  if (s.error === 'unavailable') return 'relay unreachable (try the read-only link in Share)';
   if (s.state === 'connected') return 'connected';
   if (s.state === 'connecting') return 'connecting...';
   return 'disconnected (will retry)';

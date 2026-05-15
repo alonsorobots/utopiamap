@@ -28,7 +28,7 @@ import { TimePanel } from './TimePanel';
 import type { TimePanelHandle } from './TimePanel';
 import { TopBar } from './TopBar';
 import type { AxisOption } from './TopBar';
-import { decodeStateFromHash, encodeStateToHash, isShareHash } from './shareLink';
+import { decodeStateFromHash, encodeStateToBase64, encodeStateToHash, isShareHash } from './shareLink';
 import type { ShareableState } from './shareLink';
 import { useCollab } from './useCollab';
 import { CollabBar } from './CollabUI';
@@ -1996,11 +1996,11 @@ export default function App() {
     }, 500);
   }, [formula, isShareView]);
 
-  const buildReadonlyShareLink = useCallback(async (): Promise<string> => {
+  const snapshotState = useCallback((): ShareableState => {
     const map = mapRef.current;
     const center = map?.getCenter();
     const mask: PaintedMask | null = exportPaintedMask();
-    const state: ShareableState = {
+    return {
       curves: curveStatesRef.current,
       units: unitStatesRef.current,
       formula,
@@ -2010,10 +2010,27 @@ export default function App() {
       year: getTimeYear(),
       ...(mask ? { mask } : {}),
     };
-    const hash = await encodeStateToHash(state);
+  }, [formula]);
+
+  const buildReadonlyShareLink = useCallback(async (): Promise<string> => {
+    const hash = await encodeStateToHash(snapshotState());
     const base = window.location.origin + window.location.pathname;
     return `${base}#${hash}`;
-  }, [formula]);
+  }, [snapshotState]);
+
+  // Hybrid link = static snapshot + live room id, so recipients still
+  // see the current view even if the worker is down or full. The
+  // collab session is started here if it isn't already so the room id
+  // exists in time to splice into the URL. Falls back to a pure
+  // read-only link if collab isn't configured for this build.
+  const buildCollabShareLink = useCallback(async (): Promise<string> => {
+    const blob = await encodeStateToBase64(snapshotState());
+    const base = window.location.origin + window.location.pathname;
+    let roomId = collab.roomId;
+    if (!roomId && collab.enabled) roomId = collab.startSession();
+    if (!roomId) return `${base}#view=${blob}`;
+    return `${base}#view=${blob}&room=${roomId}`;
+  }, [snapshotState, collab]);
 
   // Debounce curve + year publishes: dragging a curve point or
   // scrubbing the timeline fires the change handler on every pointer
@@ -2393,8 +2410,10 @@ export default function App() {
         onSaveFile={handleSaveFile}
         onLoadFile={handleLoadFile}
         onBuildReadonlyLink={buildReadonlyShareLink}
+        onBuildCollabLink={buildCollabShareLink}
         collabEnabled={collab.enabled}
         collabShareUrl={collab.shareUrl}
+        collabError={collab.status.error ?? null}
         onStartCollab={collab.startSession}
       />
 

@@ -76,6 +76,23 @@ export default {
   },
 };
 
+// Per-socket rate limit. With the client's debouncing on cursor, year,
+// formula, and curve publishes, a healthy collab tab generates at most
+// ~5 messages a minute. We cap at 60/min so a buggy retry loop or a
+// bad actor can't blow through the whole free-tier budget by themselves
+// (the daily limit is account-wide; one runaway client could otherwise
+// take the whole site's collab offline). On overshoot we close the
+// offending socket with code 1008 ("policy violation") so the client
+// can show a friendly "you got rate limited" message rather than
+// pretending nothing's wrong.
+const MAX_MSGS_PER_WINDOW = 60;
+const RATE_WINDOW_MS = 60_000;
+
+interface SocketAttachment {
+  count: number;
+  windowStart: number;
+}
+
 export class RoomDO {
   private readonly state: DurableObjectState;
 
@@ -97,6 +114,12 @@ export class RoomDO {
     // collaborators cost essentially nothing.
     this.state.acceptWebSocket(server);
 
+    // Initialise the per-socket counters. serializeAttachment survives
+    // hibernation, so when the runtime spins this DO back up to handle
+    // a future message we still know how many frames this socket has
+    // already burned through.
+    server.serializeAttachment({ count: 0, windowStart: Date.now() } satisfies SocketAttachment);
+
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -104,6 +127,11 @@ export class RoomDO {
   // The relay never inspects or stores the bytes -- Yjs sync + awareness
   // messages are pure binary and are forwarded verbatim.
   webSocketMessage(sender: WebSocket, msg: ArrayBuffer | string) {
+    if (this.exceededRateLimit(sender)) {
+      try { sender.close(1008, "rate-limit: too many messages"); } catch {}
+      return;
+    }
+
     for (const peer of this.state.getWebSockets()) {
       if (peer === sender) continue;
       try {
@@ -112,6 +140,21 @@ export class RoomDO {
         // peer is mid-disconnect; ignore
       }
     }
+  }
+
+  // Returns true once `sender` has sent more than MAX_MSGS_PER_WINDOW
+  // frames inside the last RATE_WINDOW_MS milliseconds. Bumps the
+  // counter every call so the next-message check stays accurate.
+  private exceededRateLimit(sender: WebSocket): boolean {
+    const now = Date.now();
+    const att = (sender.deserializeAttachment() ?? { count: 0, windowStart: now }) as SocketAttachment;
+    if (now - att.windowStart > RATE_WINDOW_MS) {
+      att.count = 0;
+      att.windowStart = now;
+    }
+    att.count += 1;
+    sender.serializeAttachment(att);
+    return att.count > MAX_MSGS_PER_WINDOW;
   }
 
   webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean) {

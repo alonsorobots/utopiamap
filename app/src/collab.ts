@@ -28,6 +28,12 @@ const MSG_AWARENESS = 1;
 const RECONNECT_MIN = 500;
 const RECONNECT_MAX = 15_000;
 
+// Stop retrying after this many consecutive failures so a perma-down
+// relay (or a 429 from the free-tier daily cap) doesn't busy-loop the
+// browser. Surfaces as status.error = 'unavailable' / 'rate-limited'
+// so the UI can degrade gracefully.
+const MAX_CONNECT_FAILURES = 5;
+
 const COLOR_PALETTE = [
   '#f87171', '#fb923c', '#facc15', '#4ade80', '#34d399',
   '#22d3ee', '#60a5fa', '#a78bfa', '#f472b6', '#e879f9',
@@ -63,6 +69,13 @@ export interface PeerCursor {
 export interface CollabStatus {
   state: 'disconnected' | 'connecting' | 'connected';
   peerCount: number;
+  // When we give up reconnecting (the relay is down, we've hit
+  // worker free-tier capacity, or our socket got closed for policy
+  // violation), surface that to the UI so the share modal can swap
+  // the collab button for a "live collab busy, share read-only
+  // instead" message instead of letting users copy a link that won't
+  // actually work.
+  error?: 'rate-limited' | 'unavailable' | null;
 }
 
 type StatusListener = (s: CollabStatus) => void;
@@ -80,7 +93,7 @@ export class Collab {
   private destroyed = false;
   private statusListeners = new Set<StatusListener>();
   private cursorListeners = new Set<CursorListener>();
-  private status: CollabStatus = { state: 'disconnected', peerCount: 0 };
+  private status: CollabStatus = { state: 'disconnected', peerCount: 0, error: null };
 
   // Joiner race control. When we open a fresh tab on an existing room
   // (#room=<id> in the URL) the React app immediately tries to publish
@@ -101,6 +114,10 @@ export class Collab {
   private isPublishing: boolean;
   private pendingPatch: SharedView = {};
   private aloneTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Connection-failure tracking for graceful degradation (see
+  // MAX_CONNECT_FAILURES). Reset whenever a socket actually opens.
+  private consecutiveFailures = 0;
 
   constructor(roomBaseUrl: string, roomId: string, opts: { joining: boolean } = { joining: false }) {
     this.doc = new Y.Doc();
@@ -246,7 +263,7 @@ export class Collab {
 
   private connect() {
     if (this.destroyed) return;
-    this.setStatus({ state: 'connecting', peerCount: this.status.peerCount });
+    this.setStatus({ state: 'connecting', peerCount: this.status.peerCount, error: this.status.error ?? null });
 
     let ws: WebSocket;
     try {
@@ -260,7 +277,8 @@ export class Collab {
 
     ws.addEventListener('open', () => {
       this.reconnectDelay = RECONNECT_MIN;
-      this.setStatus({ state: 'connected', peerCount: this.status.peerCount });
+      this.consecutiveFailures = 0;
+      this.setStatus({ state: 'connected', peerCount: this.status.peerCount, error: null });
 
       // Initial sync handshake: send our current state vector so peers
       // know what they need to send us. They'll respond with a SyncStep2.
@@ -284,15 +302,31 @@ export class Collab {
       this.handleIncoming(new Uint8Array(ev.data));
     });
 
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (ev) => {
       this.ws = null;
-      this.setStatus({ state: 'disconnected', peerCount: 0 });
+      // Bump failure counter only when the socket never reached an
+      // open state (otherwise it'd grow forever during a long-lived
+      // session that just had a transient disconnect).
+      if (this.status.state !== 'connected') this.consecutiveFailures += 1;
+
+      const giveUp = this.consecutiveFailures >= MAX_CONNECT_FAILURES
+        // Code 1008 = the worker explicitly told us we're rate-limited.
+        // Don't reconnect on the same identity -- it'll just bounce
+        // again. Surface the error and let the user share read-only.
+        || ev.code === 1008;
+
+      const errorKind: CollabStatus['error'] = giveUp
+        ? (ev.code === 1008 ? 'rate-limited' : 'unavailable')
+        : (this.status.error ?? null);
+      this.setStatus({ state: 'disconnected', peerCount: 0, error: errorKind });
+
       // Mark all remote clients as gone so their cursors disappear.
       const remoteClients = Array.from(this.awareness.getStates().keys())
         .filter((id) => id !== this.doc.clientID);
       awarenessProtocol.removeAwarenessStates(this.awareness, remoteClients, 'remote');
       this.fanOutCursors();
-      this.scheduleReconnect();
+
+      if (!giveUp) this.scheduleReconnect();
     });
 
     ws.addEventListener('error', () => {
@@ -428,12 +462,16 @@ export class Collab {
 
   private fanOutCursors() {
     const peers = this.collectCursors();
-    this.setStatus({ state: this.status.state, peerCount: peers.length });
+    this.setStatus({ state: this.status.state, peerCount: peers.length, error: this.status.error ?? null });
     for (const cb of this.cursorListeners) cb(peers);
   }
 
   private setStatus(s: CollabStatus) {
-    if (s.state === this.status.state && s.peerCount === this.status.peerCount) return;
+    if (
+      s.state === this.status.state
+      && s.peerCount === this.status.peerCount
+      && (s.error ?? null) === (this.status.error ?? null)
+    ) return;
     this.status = s;
     for (const cb of this.statusListeners) cb(s);
   }

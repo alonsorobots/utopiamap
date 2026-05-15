@@ -27,7 +27,6 @@ export interface ShareableState {
 }
 
 const HASH_PREFIX_VIEW = 'view=';
-const HASH_PREFIX_ROOM = 'room=';
 
 function toBase64Url(bytes: Uint8Array): string {
   // btoa wants a binary string; chunk to avoid blowing the call stack on
@@ -61,27 +60,23 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 export async function encodeStateToHash(state: ShareableState): Promise<string> {
-  const json = JSON.stringify(state);
-  const utf8 = new TextEncoder().encode(json);
-  const zipped = await gzip(utf8);
-  return HASH_PREFIX_VIEW + toBase64Url(zipped);
+  return HASH_PREFIX_VIEW + (await encodeStateToBase64(state));
 }
 
 export async function decodeStateFromHash(hash: string): Promise<ShareableState | null> {
-  // Accept either "view=..." or "#view=..." or "view=...,key" (the legacy
-  // collab-room format kept the room id and key after a comma).
-  let raw = hash.startsWith('#') ? hash.slice(1) : hash;
-  let prefix: string | null = null;
-  if (raw.startsWith(HASH_PREFIX_VIEW)) prefix = HASH_PREFIX_VIEW;
-  else if (raw.startsWith(HASH_PREFIX_ROOM)) prefix = HASH_PREFIX_ROOM;
-  if (!prefix) return null;
-  raw = raw.slice(prefix.length);
-  const comma = raw.indexOf(',');
-  if (comma >= 0) raw = raw.slice(0, comma);
-  if (!raw) return null;
+  // The fragment is parsed as URLSearchParams so hybrid "view + room"
+  // links work: a collaboration share is `#view=<state>&room=<id>` so
+  // even if the live worker is down or rate-limited, recipients still
+  // see the static snapshot. Pure live-only links use `#room=<id>` and
+  // carry no static state (returns null here, the app stays on its own
+  // local defaults until the first remote sync arrives).
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash;
+  const params = new URLSearchParams(raw);
+  const blob = params.get('view');
+  if (!blob) return null;
 
   try {
-    const zipped = fromBase64Url(raw);
+    const zipped = fromBase64Url(blob);
     const utf8 = await gunzip(zipped);
     const json = new TextDecoder().decode(utf8);
     const parsed = JSON.parse(json) as ShareableState;
@@ -94,5 +89,16 @@ export async function decodeStateFromHash(hash: string): Promise<ShareableState 
 
 export function isShareHash(hash: string): boolean {
   const raw = hash.startsWith('#') ? hash.slice(1) : hash;
-  return raw.startsWith(HASH_PREFIX_VIEW) || raw.startsWith(HASH_PREFIX_ROOM);
+  const params = new URLSearchParams(raw);
+  return params.has('view') || params.has('room');
+}
+
+// Build the value half of a `view=` URL fragment (no leading `#`, no
+// `view=` prefix) so we can splat it into a URLSearchParams when
+// constructing hybrid collab links.
+export async function encodeStateToBase64(state: ShareableState): Promise<string> {
+  const json = JSON.stringify(state);
+  const utf8 = new TextEncoder().encode(json);
+  const zipped = await gzip(utf8);
+  return toBase64Url(zipped);
 }

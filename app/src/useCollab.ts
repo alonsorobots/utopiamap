@@ -62,7 +62,7 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
   // their initial publishView calls so the room's existing state wins
   // any merge with the joiner's local defaults.
   const joiningRef = useRef<boolean>(roomId !== null);
-  const [status, setStatus] = useState<CollabStatus>({ state: 'disconnected', peerCount: 0 });
+  const [status, setStatus] = useState<CollabStatus>({ state: 'disconnected', peerCount: 0, error: null });
   const [peers, setPeers] = useState<PeerCursor[]>([]);
   const collabRef = useRef<Collab | null>(null);
   const sinksRef = useRef(sinks);
@@ -124,7 +124,7 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
       c.destroy();
       collabRef.current = null;
       setPeers([]);
-      setStatus({ state: 'disconnected', peerCount: 0 });
+      setStatus({ state: 'disconnected', peerCount: 0, error: null });
     };
   }, [enabled, roomId]);
 

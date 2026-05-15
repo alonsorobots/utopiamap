@@ -944,21 +944,31 @@
 
 .draw-tooltip {
   position: absolute;
-  top: 64px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 22px;
+  transform: translate(-50%, -50%);
+  padding: 14px 28px;
   background: rgba(16, 16, 22, 0.92);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 18px;
   z-index: 20;
   pointer-events: none;
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.6s ease;
+}
+
+/* Phones don't have room for an 18px banner across the screen, and they
+ * also don't have shift/ctrl, so the touch tooltip is shorter anyway --
+ * keep its smaller chrome from before. */
+@media (pointer: coarse), (max-width: 600px) {
+  .draw-tooltip {
+    padding: 10px 22px;
+    font-size: 13px;
+  }
 }
 
 .draw-tooltip-visible {

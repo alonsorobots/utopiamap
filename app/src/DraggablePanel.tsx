@@ -44,11 +44,17 @@ export function DraggablePanel({
     const parent = panelRef.current.parentElement!;
     const panelRect = panelRef.current.getBoundingClientRect();
     const parentRect = parent.getBoundingClientRect();
-    const y = parentRect.height - panelRect.height - initialBottomOffset;
 
     if (initialCenter) {
-      return { x: Math.max(0, (parentRect.width - panelRect.width) / 2), y };
+      // Center on both axes: ideal phone landing for the graph editor
+      // so it sits comfortably above the time slider, away from the
+      // top bar and the corners (where draggable handles overlap).
+      return {
+        x: Math.max(0, (parentRect.width - panelRect.width) / 2),
+        y: Math.max(0, (parentRect.height - panelRect.height) / 2),
+      };
     }
+    const y = parentRect.height - panelRect.height - initialBottomOffset;
     if (initialRight !== undefined) {
       return { x: parentRect.width - panelRect.width - initialRight, y };
     }

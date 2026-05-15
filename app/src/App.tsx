@@ -2463,8 +2463,8 @@ export default function App() {
             <DraggablePanel
               initialX={24}
               initialBottomOffset={44}
-              initialWidth={210}
-              initialHeight={225}
+              initialWidth={240}
+              initialHeight={257}
               title={`${axis.label} prefs`}
               onPrev={() => stepAxis(-1)}
               onNext={() => stepAxis(1)}

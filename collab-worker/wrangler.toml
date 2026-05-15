@@ -11,7 +11,11 @@ class_name = "RoomDO"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RoomDO"]
+# Cloudflare's free plan requires SQLite-backed Durable Object
+# namespaces. We never call state.storage so the SQLite DB is
+# always empty -- the flag is purely about which billing tier the
+# namespace lands on.
+new_sqlite_classes = ["RoomDO"]
 
 # Custom domain (set up after first deploy):
 #   wrangler deploy

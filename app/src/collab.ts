@@ -40,10 +40,20 @@ export interface SharedView {
   scenario?: string;
   // Keyed view so partial updates don't clobber the whole camera.
   view?: { lng: number; lat: number; zoom: number };
+  // Per-axis curves and units (the "preferences" people tune in the
+  // graph editor). Stored as a flat record so a single peer edit only
+  // touches one axis instead of churning the entire blob.
+  curves?: Record<string, Array<{ x: number; y: number }>>;
+  units?: Record<string, string>;
 }
 
 export interface PeerCursor {
   clientId: number;
+  // Stable per-human identifier (sessionStorage seeded). Used to
+  // dedupe peers across page refreshes -- without it, a refresh
+  // briefly looks like a brand-new join because Y.Awareness keeps the
+  // departed clientID around for ~30s before timing out.
+  userId: string;
   name: string;
   color: string;
   // Geographic coords -- so each peer renders the cursor in its own
@@ -66,6 +76,7 @@ export class Collab {
   readonly doc: Y.Doc;
   readonly state: Y.Map<unknown>;            // shared SharedView fields
   readonly awareness: awarenessProtocol.Awareness;
+  readonly userId: string;
 
   private ws: WebSocket | null = null;
   private url: string;
@@ -75,7 +86,27 @@ export class Collab {
   private cursorListeners = new Set<CursorListener>();
   private status: CollabStatus = { state: 'disconnected', peerCount: 0 };
 
-  constructor(roomBaseUrl: string, roomId: string) {
+  // Joiner race control. When we open a fresh tab on an existing room
+  // (#room=<id> in the URL) the React app immediately tries to publish
+  // its local default state -- "axis=temp", "formula=temp", year=2025 --
+  // *before* the room's real state arrives over the wire. Yjs treats
+  // those default writes as concurrent with the room's prior writes
+  // and resolves the conflict by clientID, which is random; so half
+  // the time the joiner's defaults overwrite the room's real state
+  // and "collab does nothing".
+  //
+  // Fix: stash early publishes in `pendingPatch` until we've heard
+  // from a peer. When a remote sync arrives we DROP the pending patch
+  // (the room's state is canonical; our React tree will be updated by
+  // the observer, and the next render's publishView call will be a
+  // deepEqual no-op). When we're the only one in the room (creator
+  // mode, or the timer below fires), we flush the pending patch so we
+  // become the source of truth instead.
+  private isPublishing: boolean;
+  private pendingPatch: SharedView = {};
+  private aloneTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(roomBaseUrl: string, roomId: string, opts: { joining: boolean } = { joining: false }) {
     this.doc = new Y.Doc();
     this.state = this.doc.getMap('view');
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -105,22 +136,68 @@ export class Collab {
     };
     this.awareness.on('update', awarenessChanged);
 
-    // Random user identity. Saved per-tab so it doesn't churn between
-    // reloads; falls back to a fresh one when sessionStorage isn't
-    // available (private windows etc).
+    // Persistent identity. localStorage (not sessionStorage) so the
+    // *same human* in the *same browser* keeps the same explorer name
+    // across page refreshes and across days. The userId is a tiny
+    // stable hash exposed via awareness so peers can dedupe a refresh
+    // (otherwise the freshly-allocated Y.Doc clientID makes a reload
+    // look like a stranger joining for ~30 seconds, until the old
+    // awareness entry times out).
     const persisted = readPersistedIdentity();
     const seed = persisted.seed ?? Math.floor(Math.random() * 1e9);
-    const color = COLOR_PALETTE[seed % COLOR_PALETTE.length];
-    const name = persisted.name ?? randomName(seed);
-    writePersistedIdentity({ seed, name });
-    this.awareness.setLocalStateField('user', { name, color });
+    const color = persisted.color ?? COLOR_PALETTE[seed % COLOR_PALETTE.length];
+    const name = persisted.name ?? randomExplorerName(seed);
+    const userId = persisted.userId ?? generateUserId();
+    writePersistedIdentity({ seed, name, color, userId });
+    this.userId = userId;
+    this.awareness.setLocalStateField('user', { name, color, userId });
+
+    // Creator publishes immediately -- they're seeding the room. Joiner
+    // defers until the first remote sync arrives (or the alone-timer
+    // fires below if the room turns out to be empty).
+    this.isPublishing = !opts.joining;
+    if (opts.joining) {
+      // If nobody responds within this window assume we're orphaned in
+      // the room (the creator already left, etc.) and start publishing
+      // our own state so the next joiner has *something* to sync to.
+      this.aloneTimeout = setTimeout(() => this.enablePublishing(true), 4000);
+    }
 
     this.connect();
+  }
+
+  // Promote ourselves out of "joining, waiting for sync" mode.
+  // `flushLocal=true` means we never heard from anyone -> publish the
+  // pending patch so we become the room's source of truth.
+  // `flushLocal=false` means a peer's data arrived -> drop pending
+  // (we'd rather adopt the room's state than overwrite it).
+  private enablePublishing(flushLocal: boolean) {
+    if (this.isPublishing) return;
+    if (this.aloneTimeout != null) {
+      clearTimeout(this.aloneTimeout);
+      this.aloneTimeout = null;
+    }
+    this.isPublishing = true;
+    const pending = this.pendingPatch;
+    this.pendingPatch = {};
+    if (flushLocal && Object.keys(pending).length > 0) {
+      this.applyLocalView(pending);
+    }
   }
 
   // ── Public API ────────────────────────────────────────────────────
 
   applyLocalView(patch: SharedView) {
+    if (!this.isPublishing) {
+      // Joiner waiting for the room's state -- stash the latest value
+      // for each key. We only keep the *last* value per key so the
+      // (eventual) flush isn't a stale replay.
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined) continue;
+        (this.pendingPatch as Record<string, unknown>)[k] = v;
+      }
+      return;
+    }
     this.doc.transact(() => {
       for (const [k, v] of Object.entries(patch)) {
         if (v === undefined) continue;
@@ -156,6 +233,10 @@ export class Collab {
 
   destroy() {
     this.destroyed = true;
+    if (this.aloneTimeout != null) {
+      clearTimeout(this.aloneTimeout);
+      this.aloneTimeout = null;
+    }
     awarenessProtocol.removeAwarenessStates(
       this.awareness, [this.doc.clientID], 'local',
     );
@@ -253,6 +334,11 @@ export class Collab {
       const reply = encoding.createEncoder();
       encoding.writeVarUint(reply, MSG_SYNC);
       const subtype = syncProtocol.readSyncMessage(decoder, reply, this.doc, 'remote');
+      // First sync from a peer = somebody is here with real state. Drop
+      // our pending defaults and let their state win; the React tree
+      // will absorb the remote values via the Y.Map observer and
+      // subsequent local publishes will be deepEqual no-ops.
+      if (!this.isPublishing) this.enablePublishing(false);
       // Only forward the reply if it contains useful data. readSyncMessage
       // writes nothing for SyncStep2/Update messages, so skip empty frames.
       if (subtype === syncProtocol.messageYjsSyncStep1) {
@@ -271,21 +357,52 @@ export class Collab {
   // ── Cursor fan-out ───────────────────────────────────────────────
 
   private collectCursors(): PeerCursor[] {
-    const out: PeerCursor[] = [];
+    // Dedupe by userId: when a peer reloads the page, Y.Awareness keeps
+    // their pre-refresh entry around for ~30 seconds before it times
+    // out, so without deduping a refresh briefly looks like a brand
+    // new person joining. We keep the entry with the highest clientID
+    // (Y.Doc allocates a new monotonic clientID per session, so the
+    // largest one is always the most recent connection).
+    const byUser = new Map<string, PeerCursor & { _self: boolean }>();
+    let preferredOwnClient = -1;
     for (const [clientId, raw] of this.awareness.getStates()) {
-      if (clientId === this.doc.clientID) continue;
       const st = raw as Record<string, unknown>;
-      const user = (st.user ?? {}) as { name?: string; color?: string };
+      const user = (st.user ?? {}) as { name?: string; color?: string; userId?: string };
       const cursor = st.cursor as { lng?: number; lat?: number } | undefined;
-      out.push({
+      const userId = typeof user.userId === 'string'
+        ? user.userId
+        // Fall back to the clientId so peers without an explicit userId
+        // still occupy their own slot rather than colliding.
+        : `client-${clientId}`;
+      const isSelf = userId === this.userId;
+      // Track the freshest clientID we've seen for ourselves so the
+      // refreshed-self awareness entry shadows the stale pre-refresh
+      // one in the dedupe map below.
+      if (isSelf) preferredOwnClient = Math.max(preferredOwnClient, clientId);
+      const candidate: PeerCursor & { _self: boolean } = {
         clientId,
+        userId,
+        _self: isSelf,
         name: typeof user.name === 'string' ? user.name : 'guest',
         color: typeof user.color === 'string' ? user.color : '#94a3b8',
         lng: cursor?.lng ?? NaN,
         lat: cursor?.lat ?? NaN,
         axis: typeof st.axis === 'string' ? st.axis : undefined,
-      });
+      };
+      const existing = byUser.get(userId);
+      if (!existing || clientId > existing.clientId) byUser.set(userId, candidate);
     }
+    const out: PeerCursor[] = [];
+    for (const peer of byUser.values()) {
+      if (peer._self) continue;
+      // Suppress any stale "ghost" of ourselves that might have leaked
+      // through under a different userId (rare; defensive).
+      if (peer.clientId === this.doc.clientID) continue;
+      const { _self, ...exposed } = peer;
+      void _self;
+      out.push(exposed);
+    }
+    void preferredOwnClient;
     return out;
   }
 
@@ -314,39 +431,110 @@ export class Collab {
 
 // ── Identity helpers ────────────────────────────────────────────────
 
-const ID_KEY = 'utopiamap.collab.identity';
+interface PersistedIdentity {
+  seed?: number;
+  name?: string;
+  color?: string;
+  userId?: string;
+}
 
-function readPersistedIdentity(): { seed?: number; name?: string } {
+const ID_KEY = 'utopiamap.collab.identity.v2';
+
+function readPersistedIdentity(): PersistedIdentity {
+  // localStorage (not sessionStorage) so the same human keeps the same
+  // explorer name across page reloads and across days. Falls back to
+  // a fresh identity in private windows / when storage is blocked.
   try {
-    const raw = sessionStorage.getItem(ID_KEY);
+    const raw = localStorage.getItem(ID_KEY);
     if (!raw) return {};
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as PersistedIdentity;
   } catch {
     return {};
   }
 }
 
-function writePersistedIdentity(v: { seed: number; name: string }) {
+function writePersistedIdentity(v: PersistedIdentity) {
   try {
-    sessionStorage.setItem(ID_KEY, JSON.stringify(v));
+    localStorage.setItem(ID_KEY, JSON.stringify(v));
   } catch {
     // Ignore (private window etc).
   }
 }
 
-const ADJECTIVES = [
-  'wandering', 'sunlit', 'curious', 'jagged', 'distant', 'misty',
-  'electric', 'verdant', 'ember', 'glacial', 'tidal', 'gilded',
-];
-const ANIMALS = [
-  'fox', 'otter', 'crane', 'lynx', 'heron', 'panda', 'kestrel',
-  'mantis', 'narwhal', 'koi', 'wolf', 'finch',
+function generateUserId(): string {
+  // 96 bits is more than enough collision resistance for "is this the
+  // same human" dedupe; keep it short to stay legible in dev tools.
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  let s = '';
+  for (const b of arr) s += b.toString(16).padStart(2, '0');
+  return s;
+}
+
+// Deliberately diverse: weighted toward women, people of colour, and
+// explorers from outside the European tradition, with a sprinkle of
+// fictional captains for fun. The user explicitly requested Cpt. Sully,
+// Odysseus, Argonaut, Carl Sagan and Magellan, so they're at the top.
+const EXPLORER_NAMES = [
+  'Cpt. Sully',
+  'Odysseus',
+  'Argonaut',
+  'Carl Sagan',
+  'Magellan',
+  // Real-world explorers, scientists, astronauts, navigators
+  'Sacagawea',
+  'Ibn Battuta',
+  'Zheng He',
+  'Mae Jemison',
+  'Bessie Coleman',
+  'Junko Tabei',
+  'Hatshepsut',
+  'Valentina Tereshkova',
+  'Tenzing Norgay',
+  'Sylvia Earle',
+  'Jane Goodall',
+  'Wangari Maathai',
+  'Katherine Johnson',
+  'Matthew Henson',
+  'Ada Blackjack',
+  'Marie Tharp',
+  'Annie Easley',
+  'Gertrude Bell',
+  'Maria Sibylla Merian',
+  'Yuri Gagarin',
+  'Roald Amundsen',
+  'Marco Polo',
+  'Leif Erikson',
+  'Dian Fossey',
+  'Mary Leakey',
+  'Amelia Earhart',
+  'Nellie Bly',
+  'Marie Curie',
+  'Mary Kingsley',
+  'Pytheas',
+  'Vasco da Gama',
+  'Jacques Cousteau',
+  'Edmund Hillary',
+  'Hiram Bingham',
+  'Roy Chapman Andrews',
+  'Gertrude Ederle',
+  // Fictional captains and adventurers (tongue-in-cheek)
+  'Lt. Uhura',
+  'Cpt. Picard',
+  'Cpt. Janeway',
+  'Lara Croft',
+  'Indiana Jones',
+  'Dora the Explorer',
+  'Doctor Who',
+  'Princess Leia',
+  'Cpt. Nemo',
 ];
 
-function randomName(seed: number): string {
-  const a = ADJECTIVES[seed % ADJECTIVES.length];
-  const b = ANIMALS[(seed >> 8) % ANIMALS.length];
-  return `${a} ${b}`;
+function randomExplorerName(seed: number): string {
+  const idx = Math.abs(seed) % EXPLORER_NAMES.length;
+  return EXPLORER_NAMES[idx];
 }
 
 // ── Room id helpers ─────────────────────────────────────────────────

@@ -20,7 +20,7 @@ import {
 import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getCatalog, getTilesBase } from './tileDataLoader';
 import { tokenize as tokenizeFormula, resolveAxisAlias } from './formulaParser';
 import type { FormulaError, PaintedMask } from './heatmapLayer';
-import { CurveEditor } from './CurveEditor';
+import { CurveEditor, evaluateCurvePoints } from './CurveEditor';
 import type { AxisConfig, CurvePoint } from './CurveEditor';
 import { DraggablePanel } from './DraggablePanel';
 import { DrawMode } from './DrawMode';
@@ -1712,14 +1712,48 @@ export default function App() {
       mapRef.current?.triggerRepaint();
     },
     onFormula: (f) => {
-      setFormula(f);
-      const err = setHeatmapFormula(f);
+      // A peer publishing a fresh empty value (which can happen during
+      // a join race or if someone clears their bar) shouldn't flash
+      // the local user's formula bar red. Treat empty/whitespace as
+      // "no formula" -- which setHeatmapFormula already accepts as a
+      // no-op single-axis fallback.
+      const trimmed = f.trim();
+      setFormula(trimmed);
+      const err = setHeatmapFormula(trimmed);
       setFormulaError(err ? err.message : null);
       mapRef.current?.triggerRepaint();
     },
     onYear: (y, s) => {
       setTimeYear(y, s);
       timePanelRef.current?.jumpToYear(y);
+    },
+    onCurves: (curves) => {
+      // A peer tuned one or more curves. Adopt the new control points
+      // for every changed axis and re-rasterize the LUT so the GPU
+      // picks up the change immediately, even for axes that don't have
+      // a CurveEditor mounted right now (e.g. inside a multi-axis
+      // formula). Bumping hydrationKey forces the visible CurveEditor
+      // to remount with the peer's points instead of the local ones.
+      let touched = false;
+      for (const [axisId, points] of Object.entries(curves)) {
+        if (!Array.isArray(points)) continue;
+        curveStatesRef.current[axisId] = points as CurvePoint[];
+        try { updateLookupTexture(axisId, evaluateCurvePoints(points as CurvePoint[])); } catch {}
+        touched = true;
+      }
+      if (touched) {
+        setHydrationKey((k) => k + 1);
+        mapRef.current?.triggerRepaint();
+      }
+    },
+    onUnits: (units) => {
+      let touched = false;
+      for (const [axisId, unit] of Object.entries(units)) {
+        if (typeof unit !== 'string') continue;
+        unitStatesRef.current[axisId] = unit;
+        touched = true;
+      }
+      if (touched) setHydrationKey((k) => k + 1);
     },
   });
 
@@ -1760,7 +1794,9 @@ export default function App() {
   // Push local axis / formula / cursor-axis into the shared collab doc
   // whenever they change. Y.Map.set is a no-op when the value already
   // matches, so this also harmlessly re-fires after a remote update without
-  // bouncing back.
+  // bouncing back. When collab.roomId flips (new session) we also seed
+  // the room with our current curves/units so a freshly-shared link
+  // shows the creator's tunings rather than a blank slate.
   useEffect(() => {
     collab.publishView({ axis: activeAxis });
     collab.publishCursor(null, activeAxis);
@@ -1768,6 +1804,15 @@ export default function App() {
   useEffect(() => {
     collab.publishView({ formula });
   }, [formula, collab]);
+  useEffect(() => {
+    if (!collab.roomId) return;
+    // One-shot seed when a session starts. Subsequent edits flow
+    // through handlePointsChange / handleUnitChange.
+    collab.publishView({
+      curves: { ...curveStatesRef.current },
+      units: { ...unitStatesRef.current },
+    });
+  }, [collab.roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1965,12 +2010,17 @@ export default function App() {
   const handlePointsChange = useCallback((axisId: string, points: CurvePoint[]) => {
     curveStatesRef.current[axisId] = points;
     triggerSave();
-  }, [triggerSave]);
+    // Broadcast to peers. We send the WHOLE curves map (not just the
+    // changed axis) because Y.Map.set replaces the value -- partial
+    // patches would clobber other peers' edits to other axes.
+    collab.publishView({ curves: { ...curveStatesRef.current } });
+  }, [triggerSave, collab]);
 
   const handleUnitChange = useCallback((axisId: string, unit: string) => {
     unitStatesRef.current[axisId] = unit;
     triggerSave();
-  }, [triggerSave]);
+    collab.publishView({ units: { ...unitStatesRef.current } });
+  }, [triggerSave, collab]);
 
   useEffect(() => { triggerSave(); }, [activeAxis, formula, triggerSave]);
 
@@ -2326,8 +2376,6 @@ export default function App() {
         status={collab.status}
         peers={collab.peers}
         roomId={collab.roomId}
-        shareUrl={collab.shareUrl}
-        onStart={collab.startSession}
         onEnd={collab.endSession}
       />
       <CollabCursors map={mapRef.current} peers={collab.peers} />

@@ -79,6 +79,12 @@ function evaluateAtX(points: CurvePoint[], x: number): number {
   return sorted[sorted.length - 1].y;
 }
 
+// Exposed so callers (collab sync, etc.) can rasterize a peer's
+// updated curve into a GPU LUT without remounting the editor.
+export function evaluateCurvePoints(points: CurvePoint[]): Float32Array {
+  return evaluateCurve(points);
+}
+
 function evaluateCurve(points: CurvePoint[]): Float32Array {
   const out = new Float32Array(256);
   const sorted = [...points].sort((a, b) => a.x - b.x);

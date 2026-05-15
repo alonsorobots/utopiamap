@@ -30,6 +30,12 @@ export interface CollabSinks {
   onAxis?: (axis: string) => void;
   onFormula?: (formula: string) => void;
   onYear?: (year: number, scenario: string) => void;
+  // Per-axis tunings ("preferences"). The value is the full new map
+  // for the keys that changed -- callers should merge into their own
+  // store rather than replace, since an edit on one axis only
+  // publishes that axis.
+  onCurves?: (curves: Record<string, Array<{ x: number; y: number }>>) => void;
+  onUnits?: (units: Record<string, string>) => void;
 }
 
 export interface UseCollabResult {
@@ -46,6 +52,11 @@ export interface UseCollabResult {
 
 export function useCollab(sinks: CollabSinks): UseCollabResult {
   const [roomId, setRoomId] = useState<string | null>(() => readRoomFromUrl());
+  // Track whether the *current* roomId came from the URL (joining) or
+  // from this tab calling startSession() (creating). Joiners defer
+  // their initial publishView calls so the room's existing state wins
+  // any merge with the joiner's local defaults.
+  const joiningRef = useRef<boolean>(roomId !== null);
   const [status, setStatus] = useState<CollabStatus>({ state: 'disconnected', peerCount: 0 });
   const [peers, setPeers] = useState<PeerCursor[]>([]);
   const collabRef = useRef<Collab | null>(null);
@@ -56,7 +67,7 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
 
   useEffect(() => {
     if (!enabled || !roomId) return;
-    const c = new Collab(COLLAB_BASE_URL, roomId);
+    const c = new Collab(COLLAB_BASE_URL, roomId, { joining: joiningRef.current });
     collabRef.current = c;
 
     const offStatus = c.onStatus(setStatus);
@@ -73,6 +84,8 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
       if (typeof v.year === 'number' && s.onYear) {
         s.onYear(v.year, typeof v.scenario === 'string' ? v.scenario : 'historical');
       }
+      if (v.curves && typeof v.curves === 'object' && s.onCurves) s.onCurves(v.curves);
+      if (v.units && typeof v.units === 'object' && s.onUnits) s.onUnits(v.units);
     };
     applyAll();
     const observer = (event: { keysChanged: Set<string> }) => {
@@ -89,6 +102,12 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
         typeof v.year === 'number' && s.onYear
       ) {
         s.onYear(v.year, typeof v.scenario === 'string' ? v.scenario : 'historical');
+      }
+      if (event.keysChanged.has('curves') && v.curves && typeof v.curves === 'object' && s.onCurves) {
+        s.onCurves(v.curves);
+      }
+      if (event.keysChanged.has('units') && v.units && typeof v.units === 'object' && s.onUnits) {
+        s.onUnits(v.units);
       }
     };
     c.state.observe(observer);
@@ -107,15 +126,23 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
   const startSession = useCallback(() => {
     if (!enabled) return null;
     const existing = readRoomFromUrl();
-    if (existing) { setRoomId(existing); return existing; }
+    if (existing) {
+      // Re-entering an existing room counts as joining.
+      joiningRef.current = true;
+      setRoomId(existing);
+      return existing;
+    }
     const id = generateRoomId();
     setRoomInUrl(id);
+    // We are the creator -- our local state seeds the room.
+    joiningRef.current = false;
     setRoomId(id);
     return id;
   }, [enabled]);
 
   const endSession = useCallback(() => {
     setRoomInUrl(null);
+    joiningRef.current = false;
     setRoomId(null);
   }, []);
 

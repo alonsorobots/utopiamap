@@ -1,6 +1,16 @@
 name = "utopiamap-collab"
 main = "src/worker.ts"
 compatibility_date = "2024-12-01"
+# Keep the *.workers.dev URL alive as a fallback so we can smoke-test
+# the relay even if the custom domain ever has DNS / cert trouble.
+workers_dev = true
+
+# Bind collab.utopiamap.com directly to this Worker. Cloudflare
+# auto-provisions the DNS record + cert; the frontend already points
+# VITE_COLLAB_URL at wss://collab.utopiamap.com/room/.
+[[routes]]
+pattern = "collab.utopiamap.com"
+custom_domain = true
 
 # Durable Object that holds an in-memory list of WebSockets for one room and
 # relays Yjs sync + awareness messages between them. State lives only as long

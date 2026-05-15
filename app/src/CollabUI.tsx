@@ -70,64 +70,37 @@ interface BarProps {
   status: CollabStatus;
   peers: PeerCursor[];
   roomId: string | null;
-  shareUrl: string | null;
-  onStart: () => void;
   onEnd: () => void;
 }
 
-export function CollabBar({ enabled, status, peers, roomId, shareUrl, onStart, onEnd }: BarProps) {
-  const [copied, setCopied] = useState(false);
-
-  if (!enabled) return null;
-
-  const handleCopy = async () => {
-    if (!shareUrl) return;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Fallback: prompt the user.
-      window.prompt('Copy this link to share:', shareUrl);
-    }
-  };
+export function CollabBar({ enabled, status, peers, roomId, onEnd }: BarProps) {
+  // The "start a session" affordance lives inside the share modal
+  // (the same button you use to copy a read-only link), so the bar
+  // only renders once we're actually in a room. Outside of a room
+  // there's nothing useful to show.
+  if (!enabled || !roomId) return null;
 
   return (
     <div className="collab-bar">
-      {!roomId ? (
-        <button className="collab-btn" onClick={onStart} title="Start a shared session">
-          Share session
-        </button>
-      ) : (
-        <>
-          <button
-            className="collab-btn"
-            onClick={handleCopy}
-            title={shareUrl ?? ''}
+      <span className="collab-presence" title={statusLabel(status)}>
+        <span className={`collab-dot collab-dot-${status.state}`} />
+        {peers.length === 0 ? 'just you' : `${peers.length + 1} here`}
+      </span>
+      <div className="collab-avatars">
+        {peers.slice(0, 6).map((p) => (
+          <span
+            key={p.userId}
+            className="collab-avatar"
+            style={{ background: p.color }}
+            title={`${p.name}${p.axis ? ` -- ${p.axis}` : ''}`}
           >
-            {copied ? 'Link copied' : 'Copy invite link'}
-          </button>
-          <span className="collab-presence" title={statusLabel(status)}>
-            <span className={`collab-dot collab-dot-${status.state}`} />
-            {peers.length === 0 ? 'just you' : `${peers.length + 1} here`}
+            {initials(p.name)}
           </span>
-          <div className="collab-avatars">
-            {peers.slice(0, 6).map((p) => (
-              <span
-                key={p.clientId}
-                className="collab-avatar"
-                style={{ background: p.color }}
-                title={`${p.name}${p.axis ? ` -- ${p.axis}` : ''}`}
-              >
-                {initials(p.name)}
-              </span>
-            ))}
-          </div>
-          <button className="collab-btn collab-btn-end" onClick={onEnd} title="Leave the shared session">
-            Leave
-          </button>
-        </>
-      )}
+        ))}
+      </div>
+      <button className="collab-btn collab-btn-end" onClick={onEnd} title="Leave the shared session">
+        Leave
+      </button>
     </div>
   );
 }

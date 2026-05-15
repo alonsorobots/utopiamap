@@ -68,7 +68,11 @@ export function DraggablePanel({
   }, [computePos]);
 
   useEffect(() => {
-    if (initialRight === undefined && !initialCenter) return;
+    // Always re-anchor on window resize until the user takes manual
+    // control. The vertical position is computed from
+    // (parent.height - panel.height - initialBottomOffset), so any
+    // panel needs to track viewport-height changes -- not just the
+    // ones with initialRight / initialCenter (which only matter for X).
     const onResize = () => {
       if (userDragged.current) return;
       const p = computePos();
@@ -76,7 +80,7 @@ export function DraggablePanel({
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [initialRight, initialCenter, computePos]);
+  }, [computePos]);
 
   const startMove = useCallback((e: React.PointerEvent) => {
     e.preventDefault();

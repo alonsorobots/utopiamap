@@ -328,6 +328,25 @@
   background-clip: padding-box;
 }
 
+/* iOS Safari + other touch browsers paint their own overlay scrollbar
+ * regardless of ::-webkit-scrollbar styling, and that overlay always
+ * fades after any interaction. Since touch users scroll by swiping and
+ * don't need a visible scrollbar at all, hide it completely on coarse
+ * pointers. We also drop scrollbar-gutter (no visible bar = no gutter
+ * needed), reclaiming the 8px on the right for the menu content. */
+@media (pointer: coarse) {
+  .axis-menu {
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+  .axis-menu::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+    -webkit-appearance: none;
+  }
+}
+
 .axis-menu-item {
   display: flex;
   align-items: center;

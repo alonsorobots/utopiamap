@@ -273,17 +273,19 @@
    * on every form factor. */
   display: flex;
   flex-direction: column;
-  width: var(--axis-menu-col-w);
+  /* Shrink-wrap to the widest child (driven by item min-width below)
+   * AND include the scrollbar lane in the panel's outer width via
+   * scrollbar-gutter: stable. Net effect: when items are wide the
+   * panel grows; when the scrollbar appears the panel widens to the
+   * RIGHT to make room for it instead of stealing pixels from the
+   * existing items. */
+  width: auto;
+  min-width: var(--axis-menu-col-w);
   max-width: calc(100vw - 12px);
   max-height: var(--axis-menu-max-h);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  /* Reserve space for the scrollbar even when it's not needed so
-   * expanding an accordion (Energy / Natural Hazards) doesn't suddenly
-   * carve a vertical strip out of the right side of every existing
-   * item. The thumb itself only appears when the content actually
-   * overflows -- it just fades in inside its pre-allocated gutter. */
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
@@ -322,7 +324,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  /* min-width pins the panel to at least one column; flex stretches
+   * every item across the panel's actual rendered width so the rows
+   * always look uniform whether or not a sub-accordion has pushed
+   * the panel wider. */
+  min-width: var(--axis-menu-col-w);
+  width: auto;
   flex-shrink: 0;
   padding: 10px 14px;
   border: none;
@@ -415,9 +422,16 @@
 /* Sub-items rendered inline beneath an expanded accordion trigger.
  * Indented (rail + nudged padding) so the visual nesting is obvious
  * without needing a separate panel. Slightly smaller text + tighter
- * vertical rhythm so the menu doesn't feel like it doubled in size. */
+ * vertical rhythm so the menu doesn't feel like it doubled in size.
+ *
+ * Sub-items also have a larger min-width than top-level rows, which
+ * means whenever an accordion is open the panel intrinsically grows
+ * wider to the right -- preserving the full label width even with
+ * the deeper indent. The whole menu just slides outward instead of
+ * cramming new content into the existing footprint. */
 .axis-menu-subitem {
-  padding-left: 28px;
+  padding-left: 40px;
+  min-width: calc(var(--axis-menu-col-w) + 28px);
   font-size: 13px;
   color: #9090a0;
   position: relative;
@@ -426,12 +440,12 @@
 .axis-menu-subitem::before {
   content: '';
   position: absolute;
-  left: 14px;
+  left: 22px;
   top: 6px;
   bottom: 6px;
   width: 2px;
   border-radius: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .axis-menu-subitem.active::before {

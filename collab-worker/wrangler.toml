@@ -1,4 +1,15 @@
-name = "utopiamap-collab"
+name = "utopiamap-relay"
+# Renamed from "utopiamap-collab" on 2026-05-15 after a cursor-spam
+# bug burned through 11.6M Durable Object requests in two hours,
+# tripping Cloudflare's account-level throttle. The throttle is
+# account-wide and didn't auto-clear when we upgraded to Workers
+# Paid (a known Cloudflare bug, github.com/cloudflare/workers-sdk
+# #9909). The new script name doesn't escape it -- both names land
+# on the same account quota -- but we keep the new name to mark a
+# clean break from the buggy era, and so we have a tidy script to
+# point support at when the throttle ever lifts. The old
+# "utopiamap-collab" script can be deleted from the dashboard once
+# the account quota is healthy again.
 main = "src/worker.ts"
 compatibility_date = "2024-12-01"
 # Keep the *.workers.dev URL alive as a fallback so we can smoke-test
@@ -21,13 +32,7 @@ class_name = "RoomDO"
 
 [[migrations]]
 tag = "v1"
-# Cloudflare's free plan requires SQLite-backed Durable Object
-# namespaces. We never call state.storage so the SQLite DB is
-# always empty -- the flag is purely about which billing tier the
-# namespace lands on.
+# SQLite-backed DOs are required on Workers Free and supported on
+# Workers Paid. We never call state.storage so the per-DO SQLite DB
+# is always empty.
 new_sqlite_classes = ["RoomDO"]
-
-# Custom domain (set up after first deploy):
-#   wrangler deploy
-#   then in the CF dashboard add a custom domain like collab.utopiamap.com
-# The frontend reads VITE_COLLAB_URL=wss://collab.utopiamap.com/room/

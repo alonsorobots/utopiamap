@@ -1642,3 +1642,135 @@
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
+
+/* ── Debug panel (telemetry overlay) ─────────────────────────────── */
+
+.debug-panel {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 9999;
+  width: 360px;
+  max-height: 70vh;
+  background: rgba(15, 18, 22, 0.94);
+  color: #e8eaed;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+}
+.debug-panel-collapsed { max-height: none; }
+
+.debug-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.debug-panel-title {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffd66b;
+  font-size: 10px;
+}
+.debug-panel-actions { display: flex; gap: 6px; }
+.debug-panel-actions button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font: inherit;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.debug-panel-actions button:hover { background: rgba(255, 255, 255, 0.08); }
+
+.debug-panel-body {
+  padding: 8px 10px;
+  overflow-y: auto;
+}
+
+.debug-panel-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+.debug-panel-num { color: #ffd66b; font-weight: 600; }
+
+.debug-panel-section-title {
+  margin-top: 6px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.debug-panel-table {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 12px;
+  margin-bottom: 6px;
+}
+.debug-panel-row { display: contents; }
+.debug-panel-row-cat { color: #cbd5e1; }
+.debug-panel-row-num { color: #ffd66b; font-weight: 600; text-align: right; }
+
+.debug-panel-log {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.debug-panel-log-row {
+  display: grid;
+  grid-template-columns: 36px 14px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 1px 0;
+  font-size: 10.5px;
+}
+.debug-panel-log-ts { color: rgba(255, 255, 255, 0.4); text-align: right; }
+.debug-panel-log-dir { color: rgba(255, 255, 255, 0.6); text-align: center; }
+.debug-panel-log-cat { color: #cbd5e1; }
+.debug-panel-log-size { color: rgba(255, 255, 255, 0.45); }
+.debug-panel-log-detail {
+  grid-column: 3 / span 2;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.debug-panel-log-out .debug-panel-log-cat { color: #fca5a5; }
+.debug-panel-log-in .debug-panel-log-cat { color: #93c5fd; }
+.debug-panel-log-event .debug-panel-log-cat { color: #fcd34d; }
+.debug-panel-log-empty { color: rgba(255, 255, 255, 0.4); padding: 6px; text-align: center; }
+
+.debug-panel-foot {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  padding-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  margin-top: 4px;
+}
+.debug-panel-foot code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+}

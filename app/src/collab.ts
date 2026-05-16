@@ -20,6 +20,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
+import { telemetry } from './telemetry';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -119,6 +120,15 @@ export class Collab {
   // MAX_CONNECT_FAILURES). Reset whenever a socket actually opens.
   private consecutiveFailures = 0;
 
+  // Telemetry category hints for the next outbound message. The
+  // handlers in `doc.on('update')` and `awareness.on('update')` fire
+  // synchronously inside the local mutation that caused them, so we
+  // can stash the *intent* of the mutation here (e.g. 'view.formula')
+  // and pick it up in the handler. Cleared right after to avoid
+  // bleeding into a different mutation.
+  private pendingDocCategory: string | null = null;
+  private pendingAwarenessCategory: string | null = null;
+
   constructor(roomBaseUrl: string, roomId: string, opts: { joining: boolean } = { joining: false }) {
     this.doc = new Y.Doc();
     this.state = this.doc.getMap('view');
@@ -133,7 +143,7 @@ export class Collab {
       const enc = encoding.createEncoder();
       encoding.writeVarUint(enc, MSG_SYNC);
       syncProtocol.writeUpdate(enc, update);
-      this.send(encoding.toUint8Array(enc));
+      this.send(encoding.toUint8Array(enc), this.pendingDocCategory ?? 'view.unknown');
     });
 
     // Local awareness updates (cursor moved, name changed, ...) -> peers.
@@ -144,7 +154,7 @@ export class Collab {
       const enc = encoding.createEncoder();
       encoding.writeVarUint(enc, MSG_AWARENESS);
       encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
-      this.send(encoding.toUint8Array(enc));
+      this.send(encoding.toUint8Array(enc), this.pendingAwarenessCategory ?? 'aware.unknown');
       this.fanOutCursors();
     };
     this.awareness.on('update', awarenessChanged);
@@ -163,7 +173,9 @@ export class Collab {
     const userId = persisted.userId ?? generateUserId();
     writePersistedIdentity({ seed, name, color, userId });
     this.userId = userId;
+    this.pendingAwarenessCategory = 'aware.identity';
     this.awareness.setLocalStateField('user', { name, color, userId });
+    this.pendingAwarenessCategory = null;
 
     // Creator publishes immediately -- they're seeding the room. Joiner
     // defers until the first remote sync arrives (or the alone-timer
@@ -211,13 +223,19 @@ export class Collab {
       }
       return;
     }
-    this.doc.transact(() => {
-      for (const [k, v] of Object.entries(patch)) {
-        if (v === undefined) continue;
-        if (this.deepEqual(this.state.get(k), v)) continue;
-        this.state.set(k, v as unknown);
-      }
-    }, 'local');
+    const keys = Object.keys(patch).filter((k) => (patch as Record<string, unknown>)[k] !== undefined).sort();
+    this.pendingDocCategory = keys.length === 0 ? 'view.unknown' : `view.${keys.join('+')}`;
+    try {
+      this.doc.transact(() => {
+        for (const [k, v] of Object.entries(patch)) {
+          if (v === undefined) continue;
+          if (this.deepEqual(this.state.get(k), v)) continue;
+          this.state.set(k, v as unknown);
+        }
+      }, 'local');
+    } finally {
+      this.pendingDocCategory = null;
+    }
   }
 
   // Updates which axis we're "looking at" so peers can show that
@@ -227,7 +245,12 @@ export class Collab {
   setLocalAxis(axis: string) {
     const cur = (this.awareness.getLocalState() ?? {}) as Record<string, unknown>;
     if (cur.axis === axis) return;
-    this.awareness.setLocalState({ ...cur, axis });
+    this.pendingAwarenessCategory = 'aware.axis';
+    try {
+      this.awareness.setLocalState({ ...cur, axis });
+    } finally {
+      this.pendingAwarenessCategory = null;
+    }
   }
 
   onStatus(cb: StatusListener): () => void {
@@ -263,6 +286,7 @@ export class Collab {
 
   private connect() {
     if (this.destroyed) return;
+    telemetry.recordEvent('socket.connecting', this.url);
     this.setStatus({ state: 'connecting', peerCount: this.status.peerCount, error: this.status.error ?? null });
 
     let ws: WebSocket;
@@ -278,6 +302,7 @@ export class Collab {
     ws.addEventListener('open', () => {
       this.reconnectDelay = RECONNECT_MIN;
       this.consecutiveFailures = 0;
+      telemetry.recordEvent('socket.open');
       this.setStatus({ state: 'connected', peerCount: this.status.peerCount, error: null });
 
       // Initial sync handshake: send our current state vector so peers
@@ -285,7 +310,7 @@ export class Collab {
       const sync1 = encoding.createEncoder();
       encoding.writeVarUint(sync1, MSG_SYNC);
       syncProtocol.writeSyncStep1(sync1, this.doc);
-      this.send(encoding.toUint8Array(sync1));
+      this.send(encoding.toUint8Array(sync1), 'sync.step1');
 
       // Push our local awareness so existing peers see us immediately.
       const aw = encoding.createEncoder();
@@ -294,7 +319,7 @@ export class Collab {
         aw,
         awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID]),
       );
-      this.send(encoding.toUint8Array(aw));
+      this.send(encoding.toUint8Array(aw), 'aware.greet');
     });
 
     ws.addEventListener('message', (ev) => {
@@ -303,6 +328,7 @@ export class Collab {
     });
 
     ws.addEventListener('close', (ev) => {
+      telemetry.recordEvent('socket.close', `code=${ev.code}`);
       this.ws = null;
       // Bump failure counter only when the socket never reached an
       // open state (otherwise it'd grow forever during a long-lived
@@ -334,7 +360,7 @@ export class Collab {
     });
   }
 
-  private send(payload: Uint8Array) {
+  private send(payload: Uint8Array, category: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       // Cast away the SharedArrayBuffer-vs-ArrayBuffer type widening that
       // TS 5.7+ inflicts on Uint8Array. WebSocket.send accepts any view.
@@ -344,7 +370,15 @@ export class Collab {
       // time even though it works at runtime).
       const buf = new Uint8Array(payload.byteLength);
       buf.set(payload);
-      try { this.ws.send(buf.buffer); } catch {}
+      try {
+        this.ws.send(buf.buffer);
+        telemetry.recordOut(category, undefined, buf.byteLength);
+      } catch {}
+    } else {
+      // Drop on the floor while reconnecting; surface to the debug
+      // panel so a "phantom" send (e.g. a UI handler firing while
+      // we're disconnected) is visible instead of silently lost.
+      telemetry.recordEvent('send.dropped', category);
     }
   }
 
@@ -359,6 +393,7 @@ export class Collab {
     const decoder = decoding.createDecoder(buf);
     const messageType = decoding.readVarUint(decoder);
     if (messageType === MSG_SYNC) {
+      telemetry.recordIn('sync', undefined, buf.byteLength);
       const reply = encoding.createEncoder();
       encoding.writeVarUint(reply, MSG_SYNC);
       const subtype = syncProtocol.readSyncMessage(decoder, reply, this.doc, 'remote');
@@ -370,9 +405,10 @@ export class Collab {
       // Only forward the reply if it contains useful data. readSyncMessage
       // writes nothing for SyncStep2/Update messages, so skip empty frames.
       if (subtype === syncProtocol.messageYjsSyncStep1) {
-        this.send(encoding.toUint8Array(reply));
+        this.send(encoding.toUint8Array(reply), 'sync.step2');
       }
     } else if (messageType === MSG_AWARENESS) {
+      telemetry.recordIn('aware', undefined, buf.byteLength);
       const beforeIds = new Set(this.awareness.getStates().keys());
       awarenessProtocol.applyAwarenessUpdate(
         this.awareness,
@@ -408,7 +444,7 @@ export class Collab {
       enc,
       awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID]),
     );
-    this.send(encoding.toUint8Array(enc));
+    this.send(encoding.toUint8Array(enc), 'aware.republish');
   }
 
   // ── Cursor fan-out ───────────────────────────────────────────────

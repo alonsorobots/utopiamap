@@ -32,7 +32,15 @@ import { decodeStateFromHash, encodeStateToBase64, encodeStateToHash, isShareHas
 import type { ShareableState } from './shareLink';
 import { useCollab } from './useCollab';
 import { CollabBar } from './CollabUI';
+import { DebugPanel } from './DebugPanel';
+import { isDebugEnabled } from './telemetry';
 import './App.css';
+
+// Captured at module load so a single render decides whether the
+// panel ever mounts -- toggling debug mode requires a reload, which
+// keeps the production hot path free of any debug-related branches
+// that aren't constant-folded out by the bundler.
+const DEBUG_MODE = isDebugEnabled();
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 const REPO_URL = 'https://github.com/alonsorobots/utopiamap';
@@ -2422,6 +2430,8 @@ export default function App() {
         roomId={collab.roomId}
         onEnd={collab.endSession}
       />
+
+      {DEBUG_MODE && <DebugPanel />}
 
       {mapLoaded && activeAxis === 'draw' && mapRef.current && (
         <DrawMode map={mapRef.current} isTouch={isTouch} />

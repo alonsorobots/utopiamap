@@ -1478,7 +1478,6 @@ export default function App() {
   // entirely so the share-link viewer sees exactly the sender's setup, and
   // we also skip writing back to localStorage (see `triggerSave` below).
   const [isShareView, setIsShareView] = useState(HAS_SHARE_HASH);
-  const [shareHydrated, setShareHydrated] = useState(false);
   const [hydrationKey, setHydrationKey] = useState(0); // bumped to remount CurveEditor after share-state load
   const [saved] = useState(() => (HAS_SHARE_HASH ? null : loadSavedState()));
   const [activeAxis, setActiveAxis] = useState(saved?.activeAxis ?? 'temp');
@@ -1969,7 +1968,6 @@ export default function App() {
         importPaintedMask(shared.mask);
       }
       setHydrationKey(k => k + 1);
-      setShareHydrated(true);
       mapRef.current?.triggerRepaint();
     });
     return () => { cancelled = true; };
@@ -2424,25 +2422,6 @@ export default function App() {
         roomId={collab.roomId}
         onEnd={collab.endSession}
       />
-
-      {isShareView && (
-        <div className="shared-session-pill" title="You are viewing a snapshot from a shared link. Your own session is untouched.">
-          <span className="shared-session-dot" />
-          {shareHydrated ? 'viewing shared session' : 'loading shared session...'}
-          <button
-            className="shared-session-exit"
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                history.replaceState(null, '', window.location.pathname + window.location.search);
-                window.location.reload();
-              }
-            }}
-            title="Exit shared session and return to your own"
-          >
-            exit
-          </button>
-        </div>
-      )}
 
       {mapLoaded && activeAxis === 'draw' && mapRef.current && (
         <DrawMode map={mapRef.current} isTouch={isTouch} />

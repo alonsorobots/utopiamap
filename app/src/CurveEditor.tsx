@@ -184,32 +184,34 @@ function buildAreaPath(points: CurvePoint[], svgW: number, svgH: number): string
   return d;
 }
 
-// Vertical colour ramp matching what the user actually *sees* on the
-// map, not just the raw cm_warm() palette. The shader composites
-// each pixel as `col * alpha` with `alpha = result`, additively over
-// a dark base -- so the visible map colour at LUT value `t` is
-// `base + colormap(t) * t`. That `* t` is critical: it's why the
-// map's low/mid-range looks like dim darks with a hue, not the
-// saturated purples/magentas the raw c1/c2 values suggest.
-//
-// First attempt of this fill used colormap(t) un-weighted and made
-// the editor read way more vivid than the map. The stops below
-// re-bake that weighting so the editor looks like the map.
-//
-// Ordered top -> bottom = bright -> dark so the gradient aligns
-// with the curve's y semantics: y=0 (top) maps to LUT 1.0 (yellow,
-// full alpha), y=1 (bottom) to LUT 0.0 (black, zero alpha).
+// Vertical colour ramp tuned to match what the user actually *sees*
+// on the rendered map -- which is NOT just cm_warm() applied to t.
+// The map composites each pixel as `col * alpha` additively over
+// MapTiler's dark-style basemap, with `alpha = result`. So the
+// perceived colour at LUT value `t` is roughly:
+//   base + colormap(t) * t
+// where base ≈ rgb(25, 28, 38) (MapTiler dark). Three passes got us
+// here:
+//   v1: encoded raw cm_warm() stops -- editor read way too vivid
+//       (purple/magenta where the map shows near-black-with-hue).
+//   v2: applied `* t` weighting -- closer, but the lower half went
+//       fully black and the bright top got washed out at opacity
+//       0.75, so the editor still looked "less alive" than the map.
+//   v3 (this): also add the basemap tint AND render at opacity 1.0,
+//       so the dim low-LUT regions read as dim blue-grey (matching
+//       the actual basemap showing through on the map) and the
+//       bright top doesn't get diluted by the panel background.
 const CM_WARM_GRADIENT_STOPS: { offset: string; color: string }[] = [
-  // colormap(1.00) * 1.00 = c4 at full intensity
-  { offset: '0%',   color: 'rgb(252, 213, 72)' },
-  // colormap(0.75) * 0.75  ≈ c3 * 0.75
-  { offset: '25%',  color: 'rgb(170, 55, 38)'  },
-  // colormap(0.50) * 0.50  ≈ c2 * 0.50
-  { offset: '50%',  color: 'rgb(73, 5, 64)'    },
-  // colormap(0.25) * 0.25  ≈ c1 * 0.25
-  { offset: '75%',  color: 'rgb(12, 3, 26)'    },
-  // colormap(0.00) * 0.00 = pure black
-  { offset: '100%', color: 'rgb(0, 0, 0)'      },
+  // colormap(1.00) * 1.00 + base, clamped
+  { offset: '0%',   color: 'rgb(255, 241, 110)' },
+  // colormap(0.75) * 0.75 + base
+  { offset: '25%',  color: 'rgb(195, 83, 76)'   },
+  // colormap(0.50) * 0.50 + base
+  { offset: '50%',  color: 'rgb(98, 33, 102)'   },
+  // colormap(0.25) * 0.25 + base
+  { offset: '75%',  color: 'rgb(37, 31, 64)'    },
+  // base only (pure no-data shows the basemap colour)
+  { offset: '100%', color: 'rgb(25, 28, 38)'    },
 ];
 
 const CM_WARM_GRADIENT_ID = 'curveAreaWarmGradient';
@@ -480,11 +482,12 @@ export function CurveEditor({
           <path
             d={areaPath}
             fill={`url(#${CM_WARM_GRADIENT_ID})`}
-            // 0.75 reads close to the map's perceived intensity once
-            // the stops are alpha-weighted; the bright yellow at the
-            // top still pops, and the now-dark lower stops blend
-            // into the panel background instead of looking purple.
-            opacity={0.75}
+            // Full opacity now that the stops already encode the
+            // basemap tint via "+base" and the alpha weighting via
+            // "* t". Diluting with the panel background would just
+            // re-introduce the muted-yellow problem that opacity
+            // 0.75 was hiding.
+            opacity={1.0}
             pointerEvents="none"
           />
         )}

@@ -1,18 +1,20 @@
-// First-visit intro: 45s cinematic that puppets the real heatmap +
-// formula bar + curve LUTs, followed by a 2-of-6 "what matters?"
+// First-visit intro: short MIT-shape-shifting-table-style cinematic
+// (the IntroDataGrid component) that communicates "data → preferences
+// → combine" via lifted pins, followed by a 2-of-6 "what matters?"
 // picker, per-axis preset chips, and a reveal that drops the user
 // into the live app with their personalised formula loaded.
 //
-// Self-contained: the parent supplies a CinematicAPI handle (so all
-// the puppeting goes through the real underlying state) and a
-// `onFinish` callback to call when the intro is fully dismissed.
-// LocalStorage gating happens in the parent so this component can
-// stay 100% about presentation.
+// Self-contained: the parent supplies a CinematicAPI handle (so the
+// reveal stage can puppet the real heatmap state) and an `onFinish`
+// callback to call when the intro is fully dismissed. LocalStorage
+// gating happens in the parent so this component can stay 100%
+// about presentation.
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { CinematicAPI, AxisChip } from './introScript';
-import { CINEMATIC, AXIS_CHIPS, composeFormula, composeRevealSentence } from './introScript';
+import { AXIS_CHIPS, composeFormula, composeRevealSentence } from './introScript';
 import type { CurvePoint } from './CurveEditor';
+import { IntroDataGrid } from './IntroDataGrid';
 
 type Stage = 'cinematic' | 'pick-axes' | 'pick-presets' | 'reveal';
 
@@ -37,22 +39,16 @@ const SKIP_REVEAL_DELAY_MS = 3000;
 
 export function Intro({ api, onFinish, onCommit }: IntroProps) {
   const [stage, setStage] = useState<Stage>('cinematic');
-  const [sceneIdx, setSceneIdx] = useState(0);
   const [skipVisible, setSkipVisible] = useState(false);
   const [chosenAxes, setChosenAxes] = useState<string[]>([]); // chip ids in click order
   const [pickPresetForIdx, setPickPresetForIdx] = useState(0); // which of the chosen axes are we configuring
   const [presetChoices, setPresetChoices] = useState<Record<string, string>>({}); // chipId -> presetId
   const [fading, setFading] = useState(false);
 
-  // Latest API in a ref so the long-running cinematic loop doesn't
-  // capture a stale instance after parent re-renders.
+  // Latest API in a ref so the reveal-stage commit doesn't capture
+  // a stale instance after parent re-renders.
   const apiRef = useRef(api);
   apiRef.current = api;
-
-  // Cancellation token shared across all async waits in the cinematic.
-  // Flipping `cancelled = true` short-circuits each sleep() so a skip
-  // doesn't have to wait for the current scene to finish.
-  const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 
   // Skip button fades in after a brief delay so the opening shot
   // isn't immediately cluttered with UI chrome.
@@ -62,47 +58,9 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
     return () => window.clearTimeout(t);
   }, [stage]);
 
-  // Cinematic runner. Steps through CINEMATIC scenes, applying each
-  // scene's mutation and waiting holdMs before moving on. On cancel
-  // we jump straight to the interactive picker -- but only if the
-  // user explicitly skipped, not on unmount (so React strict-mode
-  // double-effects don't accidentally race past the cinematic).
-  useEffect(() => {
-    if (stage !== 'cinematic') return;
-    const token = cancelRef.current;
-    let cancelled = false;
-    const isCancelled = () => cancelled || token.cancelled;
-    const sleep = (ms: number) => new Promise<void>((resolve) => {
-      const start = performance.now();
-      const tick = () => {
-        if (isCancelled()) return resolve();
-        if (performance.now() - start >= ms) return resolve();
-        window.setTimeout(tick, Math.min(120, ms - (performance.now() - start)));
-      };
-      tick();
-    });
-
-    (async () => {
-      for (let i = 0; i < CINEMATIC.length; i++) {
-        if (isCancelled()) return;
-        setSceneIdx(i);
-        const scene = CINEMATIC[i];
-        try { await scene.apply?.(apiRef.current); } catch {}
-        if (isCancelled()) return;
-        await sleep(scene.holdMs);
-      }
-      // Natural finish -- move to interactive picker.
-      if (!isCancelled()) setStage('pick-axes');
-    })();
-
-    return () => { cancelled = true; };
-  }, [stage]);
-
   // ── Stage transitions ────────────────────────────────────────────
 
   const advanceCinematic = useCallback(() => {
-    cancelRef.current.cancelled = true;
-    cancelRef.current = { cancelled: false };
     setStage('pick-axes');
   }, []);
 
@@ -161,14 +119,11 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
   }, [stage, chosenAxes, presetChoices, onCommit, onFinish]);
 
   const onSkip = useCallback(() => {
-    cancelRef.current.cancelled = true;
     setFading(true);
     window.setTimeout(() => onFinish(), 400);
   }, [onFinish]);
 
   // ── Render ────────────────────────────────────────────────────────
-
-  const currentScene = CINEMATIC[sceneIdx] ?? CINEMATIC[CINEMATIC.length - 1];
 
   const chosenChips = useMemo<AxisChip[]>(() =>
     chosenAxes.map((id) => AXIS_CHIPS.find((c) => c.id === id)).filter((c): c is AxisChip => c != null),
@@ -192,21 +147,7 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
       </button>
 
       {stage === 'cinematic' && (
-        <>
-          <div className="intro-caption">
-            <span key={sceneIdx} className="intro-caption-text">
-              {currentScene.caption}
-            </span>
-          </div>
-          {sceneIdx >= CINEMATIC.length - 1 && (
-            <button
-              className="intro-cta visible"
-              onClick={advanceCinematic}
-            >
-              Begin →
-            </button>
-          )}
-        </>
+        <IntroDataGrid onComplete={advanceCinematic} />
       )}
 
       {stage === 'pick-axes' && (

@@ -1762,6 +1762,18 @@ export default function App() {
       }
       if (touched) setHydrationKey((k) => k + 1);
     },
+    onMask: (mask) => {
+      // A peer painted (or cleared) the draw mask. Pull the new mask
+      // into our local PaintedMask store; importPaintedMask already
+      // triggers a map repaint. We don't want to fire our own publish
+      // in response, so just guard against null/undefined and trust
+      // the type at runtime -- it was JSON-roundtripped via Yjs.
+      try {
+        importPaintedMask((mask as PaintedMask) ?? null);
+      } catch {
+        // Ignore malformed payloads from older clients.
+      }
+    },
   });
 
   const stepAxis = useCallback((dir: 1 | -1) => {
@@ -1822,10 +1834,14 @@ export default function App() {
   useEffect(() => {
     if (!collab.roomId) return;
     // One-shot seed when a session starts. Subsequent edits flow
-    // through handlePointsChange / handleUnitChange.
+    // through handlePointsChange / handleUnitChange / handleStrokeEnd.
+    // Include the current painted mask so a creator who already drew
+    // before sharing immediately propagates their drawing to joiners.
+    const mask = exportPaintedMask();
     collab.publishView({
       curves: { ...curveStatesRef.current },
       units: { ...unitStatesRef.current },
+      ...(mask ? { mask } : {}),
     });
   }, [collab.roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2073,19 +2089,79 @@ export default function App() {
     collab.publishView({ units: { ...unitStatesRef.current } });
   }, [triggerSave, collab]);
 
+  // Smoothly fly to wherever a peer is currently looking. The
+  // `lastPublishedCameraRef` update suppresses our own re-publish of
+  // the same view we just adopted -- otherwise three peers clicking
+  // each other in quick succession would each generate a fresh
+  // moveend and burn DO requests echoing the same coordinates.
+  const handleJumpToPeer = useCallback((peer: { view?: { lng: number; lat: number; zoom: number } }) => {
+    const v = peer.view;
+    const map = mapRef.current;
+    if (!v || !map) return;
+    lastPublishedCameraRef.current = v;
+    try {
+      map.flyTo({ center: [v.lng, v.lat], zoom: v.zoom, duration: 800, essential: true });
+    } catch {}
+  }, []);
+
+  // Fires after each completed paint or erase stroke. One DO request
+  // per stroke -- not per painted cell -- so a long sweeping brush
+  // stroke costs the same as a single dab.
+  const handleStrokeEnd = useCallback(() => {
+    triggerSave();
+    if (!collab.roomId) return;
+    const mask = exportPaintedMask();
+    // Yjs treats `undefined` as "delete" and `null` as a real value;
+    // we want the latter so a peer fully erasing their canvas actually
+    // propagates "no paint" to everyone else.
+    collab.publishView({ mask: mask ?? null });
+  }, [collab, triggerSave]);
+
   useEffect(() => { triggerSave(); }, [activeAxis, formula, triggerSave]);
 
+  // Debounce camera awareness publishes the same way we debounce
+  // curves / year: a single trackpad fling fires `moveend` constantly,
+  // and each call is a billable Workers request. 2s idle matches
+  // "user stopped moving the map". Plus a skip-tiny-change filter so
+  // a sub-pixel jitter doesn't burn a message.
+  const collabCameraPushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPublishedCameraRef = useRef<{ lng: number; lat: number; zoom: number } | null>(null);
+  const cameraChangedEnough = useCallback((next: { lng: number; lat: number; zoom: number }) => {
+    const prev = lastPublishedCameraRef.current;
+    if (!prev) return true;
+    if (Math.abs(prev.zoom - next.zoom) >= 0.1) return true;
+    // Center delta as a fraction of the current viewport extent
+    // (rough -- proper great-circle math isn't worth it at this fidelity).
+    const dLng = Math.abs(prev.lng - next.lng);
+    const dLat = Math.abs(prev.lat - next.lat);
+    const scale = 360 / Math.pow(2, next.zoom);
+    return (dLng + dLat) / scale > 0.05;
+  }, []);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const onMapChange = () => triggerSave();
+    const onMapChange = () => {
+      triggerSave();
+      if (!collab.roomId) return;
+      if (collabCameraPushTimer.current != null) clearTimeout(collabCameraPushTimer.current);
+      collabCameraPushTimer.current = setTimeout(() => {
+        collabCameraPushTimer.current = null;
+        const m = mapRef.current;
+        if (!m) return;
+        const c = m.getCenter();
+        const view = { lng: c.lng, lat: c.lat, zoom: m.getZoom() };
+        if (!cameraChangedEnough(view)) return;
+        lastPublishedCameraRef.current = view;
+        collab.publishCamera(view);
+      }, 2000);
+    };
     map.on('moveend', onMapChange);
     map.on('zoomend', onMapChange);
     return () => {
       map.off('moveend', onMapChange);
       map.off('zoomend', onMapChange);
     };
-  }, [mapLoaded, triggerSave]);
+  }, [mapLoaded, triggerSave, collab, cameraChangedEnough]);
 
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; text: string; color?: string } | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -2429,12 +2505,17 @@ export default function App() {
         peers={collab.peers}
         roomId={collab.roomId}
         onEnd={collab.endSession}
+        onJumpToPeer={handleJumpToPeer}
       />
 
       {DEBUG_MODE && <DebugPanel />}
 
       {mapLoaded && activeAxis === 'draw' && mapRef.current && (
-        <DrawMode map={mapRef.current} isTouch={isTouch} />
+        <DrawMode
+          map={mapRef.current}
+          isTouch={isTouch}
+          onStrokeEnd={handleStrokeEnd}
+        />
       )}
 
       {mapLoaded && activeAxis !== 'draw' && (

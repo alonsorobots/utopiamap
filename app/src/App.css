@@ -1611,6 +1611,26 @@
   margin-left: -6px;
 }
 .collab-avatar:first-child { margin-left: 0; }
+.collab-avatar {
+  /* Reset the implicit <button> chrome since we're using one now so
+     the chip can be clicked to jump to the peer's camera. */
+  padding: 0;
+  cursor: default;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.collab-avatar-jumpable {
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.collab-avatar-jumpable:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.collab-avatar-jumpable:focus-visible {
+  box-shadow: 0 0 0 2px #ffd66b;
+}
 
 /* Cursor overlay sits above the map but below the top bar so the
    collaborator markers track the camera as the user pans/zooms. */

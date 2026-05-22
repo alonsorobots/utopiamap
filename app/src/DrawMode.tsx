@@ -11,6 +11,11 @@ const MAX_BRUSH_PX = 120;
 interface DrawModeProps {
   map: MaplibreMap;
   isTouch: boolean;
+  /** Fires after a paint or erase stroke ends (mouse-up / touch-end).
+   *  Used to publish the whole-mask to collab peers once per stroke,
+   *  so painting cost is bounded by user gestures rather than by
+   *  brush speed. */
+  onStrokeEnd?: () => void;
 }
 
 function lngLatToCell(lng: number, lat: number, level: number) {
@@ -117,7 +122,11 @@ function BrushSlider({
   );
 }
 
-export function DrawMode({ map, isTouch }: DrawModeProps) {
+export function DrawMode({ map, isTouch, onStrokeEnd }: DrawModeProps) {
+  // Keep a stable ref so the effect below doesn't tear down + rebuild
+  // every render just because the parent passed a fresh callback.
+  const onStrokeEndRef = useRef(onStrokeEnd);
+  onStrokeEndRef.current = onStrokeEnd;
   const [brushPx, setBrushPx] = useState(DEFAULT_BRUSH_PX);
   const [tooltipVisible, setTooltipVisible] = useState(true);
   const [touchMode, setTouchMode] = useState<'add' | 'erase'>('add');
@@ -208,12 +217,14 @@ export function DrawMode({ map, isTouch }: DrawModeProps) {
     }
 
     function onUp() {
-      if (painting.current || erasing.current) {
+      const wasPainting = painting.current || erasing.current;
+      if (wasPainting) {
         if (!isTouch) map.dragPan.enable();
       }
       painting.current = false;
       erasing.current = false;
       lastCellKey.current = '';
+      if (wasPainting) onStrokeEndRef.current?.();
     }
 
     function onContext(e: MapMouseEvent) {
@@ -273,10 +284,12 @@ export function DrawMode({ map, isTouch }: DrawModeProps) {
 
     function onTouchEnd(e: TouchEvent) {
       if (e.touches.length === 0) {
+        const wasPainting = painting.current || erasing.current;
         touchActive = false;
         painting.current = false;
         erasing.current = false;
         lastCellKey.current = '';
+        if (wasPainting) onStrokeEndRef.current?.();
       }
     }
 

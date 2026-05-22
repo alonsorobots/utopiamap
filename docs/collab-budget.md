@@ -40,8 +40,11 @@ has open if they're testing alone.
 | Release curve drag (300ms idle after)       | 1             | One Y.Map set on `curves` (whole map).                    |
 | Scrub timeline                              | 0             | Suppressed during scrub.                                  |
 | Release scrub (300ms idle after)            | 1             | One Y.Map set on `year` (+ `scenario`).                   |
-| Pan / zoom map                              | 1 per moveend | One Y.Map set on `view`. (See open question below.)       |
+| Pan / zoom map (idle settle)                | 0 or 1        | `aware.camera` debounced 2s + skip if change is trivial.  |
+| Click peer avatar to jump to them           | 0             | Reads their last-published awareness; we don't talk back. |
 | Mouse move on map                           | **0**         | Live cursor sharing was removed for cost reasons.         |
+| Paint a stroke (any length)                 | 1             | `view.mask` on stroke end -- whole mask, delta-encoded.   |
+| Erase a stroke (any length)                 | 1             | Same path; one msg per release.                           |
 | Open share modal                            | 0             | Pure UI.                                                  |
 | Copy read-only link                         | 0             | Encoded in the URL, never touches the relay.              |
 | Copy collab link (no room yet)              | 1             | Open WebSocket = 1 GET upgrade = 1 worker request.        |
@@ -82,9 +85,11 @@ panel.
   temp"). Since everyone in a room is looking at the same axis
   anyway, the awareness one is arguably redundant — could be dropped
   to halve axis-change cost. Worth measuring before deciding.
-- **Camera moveend on every pan**: spec says 1 per moveend, but
-  maplibre fires moveend after every flick — needs measurement.
-  If higher than expected, debounce same as curves/year.
+- **Camera publish under sustained panning**: with the 2s debounce
+  in place, an actively-exploring user maxes at ~30 msg/min for
+  camera. A 5-person room where everyone is panning at once could
+  hit ~150 msg/min total in the room. Worth measuring on the debug
+  panel under real load before relaxing the debounce.
 - **Initial sync size**: a fresh joiner pulls the full room state
   in one frame. Counts as 1 message but byte-size scales with how
   much state is in the doc. Measure for rooms with large `curves`

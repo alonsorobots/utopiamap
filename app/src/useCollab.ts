@@ -36,6 +36,9 @@ export interface CollabSinks {
   // publishes that axis.
   onCurves?: (curves: Record<string, Array<{ x: number; y: number }>>) => void;
   onUnits?: (units: Record<string, string>) => void;
+  // Painted draw mask. Sent whole on each stroke (delta-encoded
+  // already, so even a dense mask is a few KB max).
+  onMask?: (mask: unknown) => void;
 }
 
 export interface UseCollabResult {
@@ -53,6 +56,10 @@ export interface UseCollabResult {
   // plan -- the per-frame mousemove broadcast was the only thing
   // that put real load on the relay).
   publishAxis: (axis: string) => void;
+  // Publish our current map camera so peers can "jump to me". Caller
+  // is responsible for debouncing -- this is a thin wrapper around
+  // the awareness broadcast.
+  publishCamera: (view: { lng: number; lat: number; zoom: number }) => void;
 }
 
 export function useCollab(sinks: CollabSinks): UseCollabResult {
@@ -91,6 +98,7 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
       }
       if (v.curves && typeof v.curves === 'object' && s.onCurves) s.onCurves(v.curves);
       if (v.units && typeof v.units === 'object' && s.onUnits) s.onUnits(v.units);
+      if (v.mask !== undefined && s.onMask) s.onMask(v.mask);
     };
     applyAll();
     const observer = (event: { keysChanged: Set<string> }) => {
@@ -113,6 +121,9 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
       }
       if (event.keysChanged.has('units') && v.units && typeof v.units === 'object' && s.onUnits) {
         s.onUnits(v.units);
+      }
+      if (event.keysChanged.has('mask') && s.onMask) {
+        s.onMask(v.mask);
       }
     };
     c.state.observe(observer);
@@ -163,6 +174,12 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
     c.setLocalAxis(axis);
   }, []);
 
+  const publishCamera = useCallback((view: { lng: number; lat: number; zoom: number }) => {
+    const c = collabRef.current;
+    if (!c) return;
+    c.setLocalCamera(view);
+  }, []);
+
   const shareUrl = useMemo(() => {
     if (!roomId || typeof window === 'undefined') return null;
     return `${window.location.origin}${window.location.pathname}#room=${roomId}`;
@@ -178,5 +195,6 @@ export function useCollab(sinks: CollabSinks): UseCollabResult {
     endSession,
     publishView,
     publishAxis,
+    publishCamera,
   };
 }

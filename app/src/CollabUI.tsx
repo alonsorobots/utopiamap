@@ -18,9 +18,14 @@ interface BarProps {
   peers: PeerCursor[];
   roomId: string | null;
   onEnd: () => void;
+  /** Click handler for the peer avatars -- "jump my map to where
+   *  they're looking". No-op if the peer hasn't published a camera
+   *  yet (just-joined peers, or peers whose tab hasn't moved the map
+   *  since opening). */
+  onJumpToPeer?: (peer: PeerCursor) => void;
 }
 
-export function CollabBar({ enabled, status, peers, roomId, onEnd }: BarProps) {
+export function CollabBar({ enabled, status, peers, roomId, onEnd, onJumpToPeer }: BarProps) {
   // The "start a session" affordance lives inside the share modal
   // (the same button you use to copy a read-only link), so the bar
   // only renders once we're actually in a room. Outside of a room
@@ -34,16 +39,24 @@ export function CollabBar({ enabled, status, peers, roomId, onEnd }: BarProps) {
         {peers.length === 0 ? 'just you' : `${peers.length + 1} here`}
       </span>
       <div className="collab-avatars">
-        {peers.slice(0, 6).map((p) => (
-          <span
-            key={p.userId}
-            className="collab-avatar"
-            style={{ background: p.color }}
-            title={`${p.name}${p.axis ? ` -- ${p.axis}` : ''}`}
-          >
-            {initials(p.name)}
-          </span>
-        ))}
+        {peers.slice(0, 6).map((p) => {
+          const canJump = !!p.view && !!onJumpToPeer;
+          const title = `${p.name}${p.axis ? ` -- ${p.axis}` : ''}${canJump ? ' (click to jump to their view)' : ''}`;
+          return (
+            <button
+              key={p.userId}
+              type="button"
+              className={`collab-avatar${canJump ? ' collab-avatar-jumpable' : ''}`}
+              style={{ background: p.color }}
+              title={title}
+              onClick={() => { if (canJump) onJumpToPeer!(p); }}
+              disabled={!canJump}
+              aria-label={title}
+            >
+              {initials(p.name)}
+            </button>
+          );
+        })}
       </div>
       <button className="collab-btn collab-btn-end" onClick={onEnd} title="Leave the shared session">
         Leave

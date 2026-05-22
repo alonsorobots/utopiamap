@@ -52,6 +52,12 @@ export interface SharedView {
   // touches one axis instead of churning the entire blob.
   curves?: Record<string, Array<{ x: number; y: number }>>;
   units?: Record<string, string>;
+  // The painted draw mask (delta-encoded PaintedMask). Published once
+  // per completed stroke (not per-cell) so the cost is bounded by
+  // user actions, not by brush speed. We deliberately keep this on
+  // the doc (not awareness) so a peer joining a room with existing
+  // paint still sees it.
+  mask?: unknown;
 }
 
 export interface PeerCursor {
@@ -65,6 +71,13 @@ export interface PeerCursor {
   color: string;
   // Selected axis per peer, for the presence chip in the UI.
   axis?: string;
+  // Where this peer is currently looking on the map. Lets the UI
+  // offer "jump to peer" without committing to a leader-follow model
+  // (we publish on a 2s debounce + skip-tiny-change filter, so an
+  // active explorer costs ~30 msg/min and an idle one costs zero).
+  // Lives on awareness rather than the shared doc so it dies with the
+  // peer and never accumulates ghost views from departed peers.
+  view?: { lng: number; lat: number; zoom: number };
 }
 
 export interface CollabStatus {
@@ -248,6 +261,20 @@ export class Collab {
     this.pendingAwarenessCategory = 'aware.axis';
     try {
       this.awareness.setLocalState({ ...cur, axis });
+    } finally {
+      this.pendingAwarenessCategory = null;
+    }
+  }
+
+  // Updates our last-known map camera so peers can "jump to me". The
+  // caller is responsible for debouncing + skip-tiny-change filtering;
+  // this method blindly broadcasts whatever it's given, so every call
+  // costs one DO request. See the camera-publish debouncer in App.tsx.
+  setLocalCamera(view: { lng: number; lat: number; zoom: number }) {
+    const cur = (this.awareness.getLocalState() ?? {}) as Record<string, unknown>;
+    this.pendingAwarenessCategory = 'aware.camera';
+    try {
+      this.awareness.setLocalState({ ...cur, view });
     } finally {
       this.pendingAwarenessCategory = null;
     }
@@ -471,6 +498,13 @@ export class Collab {
       // refreshed-self awareness entry shadows the stale pre-refresh
       // one in the dedupe map below.
       if (isSelf) preferredOwnClient = Math.max(preferredOwnClient, clientId);
+      const view = st.view as { lng?: unknown; lat?: unknown; zoom?: unknown } | undefined;
+      const cleanView = view
+        && typeof view.lng === 'number'
+        && typeof view.lat === 'number'
+        && typeof view.zoom === 'number'
+        ? { lng: view.lng, lat: view.lat, zoom: view.zoom }
+        : undefined;
       const candidate: PeerCursor & { _self: boolean } = {
         clientId,
         userId,
@@ -478,6 +512,7 @@ export class Collab {
         name: typeof user.name === 'string' ? user.name : 'guest',
         color: typeof user.color === 'string' ? user.color : '#94a3b8',
         axis: typeof st.axis === 'string' ? st.axis : undefined,
+        view: cleanView,
       };
       const existing = byUser.get(userId);
       if (!existing || clientId > existing.clientId) byUser.set(userId, candidate);

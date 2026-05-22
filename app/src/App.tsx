@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol } from 'pmtiles';
@@ -33,6 +33,9 @@ import type { ShareableState } from './shareLink';
 import { useCollab } from './useCollab';
 import { CollabBar } from './CollabUI';
 import { DebugPanel } from './DebugPanel';
+import { Intro } from './Intro';
+import type { CinematicAPI } from './introScript';
+import { hasSeenIntro, markIntroSeen, resetIntroSeen } from './introScript';
 import { isDebugEnabled } from './telemetry';
 import './App.css';
 
@@ -2105,6 +2108,97 @@ export default function App() {
     }, 300);
   }, [triggerSave, collab]);
 
+  // ── First-visit intro ────────────────────────────────────────────
+  //
+  // The intro overlay (`Intro.tsx`) renders a 45s cinematic that
+  // puppets the real heatmap + formula bar + curve LUTs to teach the
+  // data → preference → combine model, then asks the user to pick 2
+  // of 6 axes and a preset per axis so they land on a personalised
+  // formula instead of the default `temp`. Shown on first visit only
+  // (localStorage flag) and never to users arriving via a #view=
+  // share link (they came for someone else's map). A "Replay intro"
+  // pill in the corner of the info panel can re-trigger it later.
+  const [introOpen, setIntroOpen] = useState(() => !HAS_SHARE_HASH && !hasSeenIntro());
+  const finishIntro = useCallback(() => {
+    markIntroSeen();
+    setIntroOpen(false);
+  }, []);
+  const replayIntro = useCallback(() => {
+    resetIntroSeen();
+    setIntroOpen(true);
+  }, []);
+
+  // Imperative API the intro uses to drive the real app state. Each
+  // method funnels through the same setters the rest of the UI uses
+  // (so the cinematic IS the product, not a parallel reimplementation).
+  const introApi: CinematicAPI = useMemo(() => ({
+    setAxis: (axisId: string) => {
+      setActiveAxis(axisId);
+      setHeatmapActiveAxis(axisId);
+      // Force the heatmap to render the raw axis (clear any formula
+      // left over from a previous scene) so the user sees just that
+      // axis's data when the caption introduces it.
+      setHeatmapFormula('');
+      mapRef.current?.triggerRepaint();
+    },
+    setCurve: (axisId: string, points: CurvePoint[]) => {
+      curveStatesRef.current[axisId] = points;
+      try { updateLookupTexture(axisId, evaluateCurvePoints(points)); } catch {}
+      setHydrationKey((k) => k + 1);
+      mapRef.current?.triggerRepaint();
+    },
+    setFormula: (text: string) => {
+      setFormula(text);
+      const err = setHeatmapFormula(text);
+      setFormulaError(err ? err.message : null);
+      mapRef.current?.triggerRepaint();
+    },
+    typeFormula: async (text: string, charDelayMs: number) => {
+      for (let i = 1; i <= text.length; i++) {
+        const partial = text.slice(0, i);
+        setFormula(partial);
+        const err = setHeatmapFormula(partial);
+        setFormulaError(err ? err.message : null);
+        mapRef.current?.triggerRepaint();
+        await new Promise<void>((r) => window.setTimeout(r, charDelayMs));
+      }
+    },
+    flyTo: (center: [number, number], zoom: number, durationMs: number) => {
+      try { mapRef.current?.flyTo({ center, zoom, duration: durationMs, essential: true }); } catch {}
+    },
+  // setHeatmapActiveAxis / setHeatmapFormula / updateLookupTexture /
+  // evaluateCurvePoints are module-level imports; including them in
+  // deps would only churn the memo since they're stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  // When the intro commits the user's personalised state, fold it
+  // into the same place a normal session would land (curveStatesRef
+  // + formula state + active axis + triggerSave so it persists for
+  // next time -- a returning user shouldn't lose what they just
+  // chose). We also push to collab if a room is already active,
+  // even though that's vanishingly rare (you'd have to deep-link
+  // into a room without ever having visited utopiamap before).
+  const onIntroCommit = useCallback((commit: {
+    formula: string;
+    activeAxis: string;
+    curves: Record<string, CurvePoint[]>;
+  }) => {
+    for (const [axisId, points] of Object.entries(commit.curves)) {
+      curveStatesRef.current[axisId] = points;
+    }
+    setFormula(commit.formula);
+    setActiveAxis(commit.activeAxis);
+    triggerSave();
+    if (collab.roomId) {
+      collab.publishView({
+        formula: commit.formula,
+        axis: commit.activeAxis,
+        curves: { ...curveStatesRef.current },
+      });
+    }
+  }, [triggerSave, collab]);
+
   const collabYearPushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const publishYearDebounced = useCallback((year: number, scenario: string) => {
     if (collabYearPushTimer.current != null) clearTimeout(collabYearPushTimer.current);
@@ -2719,6 +2813,31 @@ export default function App() {
             </div>
           )}
         </DraggablePanel>
+      )}
+
+      {/* First-visit intro overlay. Mounts only when the localStorage
+           flag is unset and we're not viewing a share link. Calls
+           finishIntro() on both natural completion and user-skip. */}
+      {introOpen && (
+        <Intro
+          api={introApi}
+          onFinish={finishIntro}
+          onCommit={onIntroCommit}
+        />
+      )}
+
+      {/* Returning users + share-link visitors get a small persistent
+           pill in the bottom-left that re-runs the intro on demand --
+           the only discovery surface for the cinematic after first
+           visit, so make sure it's visible but unobtrusive. */}
+      {!introOpen && (
+        <button
+          className="intro-replay-pill"
+          onClick={replayIntro}
+          title="Replay the 45-second intro"
+        >
+          {HAS_SHARE_HASH ? 'New here? See the 45s intro →' : '▶ Replay intro'}
+        </button>
       )}
     </div>
   );

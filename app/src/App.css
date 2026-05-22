@@ -1946,3 +1946,327 @@
   padding: 0 4px;
   border-radius: 3px;
 }
+
+/* ── First-visit intro ──────────────────────────────────────────── */
+/*
+ * The intro overlay sits on top of the live app. Its backdrop is a
+ * radial vignette (darker at edges, near-transparent in the centre)
+ * so the underlying heatmap stays visible -- the whole point of the
+ * cinematic is that the live map IS the demo, not a still image.
+ *
+ * Captions / chips / reveal panel float on top of the backdrop and
+ * have their own slightly-darker scrims for legibility. No big modal
+ * cards on purpose: the user should always feel like they're looking
+ * at the real product, not a marketing wrapper.
+ */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px 12vh;
+  transition: opacity 0.4s ease;
+}
+
+.intro-overlay.intro-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(8, 10, 18, 0.20) 0%,
+    rgba(8, 10, 18, 0.55) 50%,
+    rgba(5, 6, 12, 0.85) 100%
+  );
+  z-index: -1;
+}
+
+.intro-skip {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 6px 14px;
+  background: rgba(20, 22, 30, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #c0c0d0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.5s ease, background 0.15s, border-color 0.15s, color 0.15s;
+  backdrop-filter: blur(8px);
+}
+
+.intro-skip.visible { opacity: 0.85; }
+.intro-skip:hover { opacity: 1; background: rgba(40, 44, 56, 0.85); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
+
+.intro-caption {
+  text-align: center;
+  pointer-events: none;
+  margin-bottom: 28px;
+  min-height: 4.5em;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.intro-caption-text {
+  display: inline-block;
+  color: #fff;
+  font-size: clamp(22px, 3vw, 36px);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.75);
+  /* re-key on each scene to restart the fade animation */
+  animation: introCaptionIn 0.6s ease forwards;
+}
+
+@keyframes introCaptionIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.intro-cta {
+  pointer-events: auto;
+  padding: 12px 28px;
+  background: rgba(96, 165, 250, 0.95);
+  color: #0a1020;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.4s ease, transform 0.12s, background 0.15s;
+  box-shadow: 0 6px 24px rgba(96, 165, 250, 0.30);
+}
+
+.intro-cta.visible { opacity: 1; }
+.intro-cta:hover:not(:disabled) { transform: translateY(-1px); background: rgba(96, 165, 250, 1); }
+.intro-cta:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Stage panels (pick-axes, pick-presets, reveal) share a centred
+ * container that sits above the caption baseline. The map remains
+ * fully visible behind. */
+.intro-panel {
+  width: min(720px, 92vw);
+  background: rgba(14, 16, 24, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 28px 24px 22px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  animation: introCaptionIn 0.45s ease forwards;
+}
+
+.intro-h {
+  margin: 0 0 6px;
+  font-size: clamp(20px, 2.4vw, 28px);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.intro-sub {
+  margin: 0 0 18px;
+  color: #9aa0b4;
+  font-size: 13px;
+}
+
+.intro-step-counter {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #7c83a0;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.intro-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 560px) {
+  .intro-chip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.intro-chip {
+  position: relative;
+  padding: 14px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: #c8ccdc;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+
+.intro-chip:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.16); transform: translateY(-1px); }
+
+.intro-chip.chosen {
+  background: linear-gradient(
+    135deg,
+    rgba(96, 165, 250, 0.18),
+    rgba(217, 70, 160, 0.22)
+  );
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #fff;
+}
+
+.intro-chip-order {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.95);
+  color: #0a1020;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.intro-chip-label {
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.intro-chip-blurb {
+  font-size: 12px;
+  color: #8a92a8;
+  line-height: 1.35;
+}
+
+.intro-chip.chosen .intro-chip-blurb { color: #c8c0d8; }
+
+.intro-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.intro-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.intro-preset {
+  padding: 16px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: #c8ccdc;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+
+.intro-preset:hover {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.10), rgba(217, 70, 160, 0.12));
+  border-color: rgba(96, 165, 250, 0.45);
+  transform: translateY(-1px);
+}
+
+.intro-preset-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.intro-preset-hint {
+  font-size: 12px;
+  color: #8a92a8;
+}
+
+/* Reveal panel: same chrome as picker, but with the formula spotlit. */
+.intro-reveal-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: #6dd3a7;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.intro-reveal-sentence {
+  margin-bottom: 18px;
+}
+
+.intro-reveal-formula {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.10), rgba(217, 70, 160, 0.10));
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+
+.intro-reveal-formula-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #9aa0b4;
+  text-transform: uppercase;
+}
+
+.intro-reveal-formula-code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 18px;
+  color: #fff;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.intro-reveal-hint { margin: 0; }
+
+/* Replay pill: tiny, bottom-left, persistent. Doesn't grab attention
+ * but is always there when the user wants to re-experience the
+ * intro. Slightly different copy for share-link viewers. */
+.intro-replay-pill {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  padding: 6px 14px;
+  background: rgba(20, 22, 30, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+  color: #9aa0b4;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  z-index: 700;
+  transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+  backdrop-filter: blur(8px);
+  opacity: 0.55;
+}
+
+.intro-replay-pill:hover {
+  opacity: 1;
+  background: rgba(40, 44, 56, 0.85);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+@media (max-width: 560px) {
+  .intro-replay-pill { font-size: 10px; padding: 5px 10px; }
+}

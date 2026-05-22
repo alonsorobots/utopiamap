@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FormulaBar } from './FormulaBar';
+import { tokenize, resolveAxisAlias } from './formulaParser';
 
 export interface AxisOption {
   id: string;
@@ -315,12 +316,68 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
   // and the user has to chase them with a scroll. `block: 'nearest'`
   // means we only scroll the minimum needed -- if the items are already
   // visible (typical when expanding near the top), nothing moves.
-  const firstSubRef = useCallback((node: HTMLButtonElement | null) => {
+  const firstSubRef = useCallback((node: HTMLElement | null) => {
     if (!node) return;
     requestAnimationFrame(() => {
       try { node.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
     });
   }, []);
+
+  // What token to drop into the formula bar when the user toggles a
+  // row's checkbox. Prefers the single-letter hotkey (so "water" lands
+  // as "w") because that's what every existing alias / autocomplete
+  // hint already trains users to read. Multi-char hotkeys (energy
+  // sub-axes use digits like '1', '2', ...) fall back to the canonical
+  // id so we don't accidentally inject a numeric literal into the
+  // formula.
+  const formulaTokenFor = useCallback((a: AxisOption): string => {
+    if (a.hotkey && /^[a-z]$/i.test(a.hotkey)) return a.hotkey.toLowerCase();
+    return a.id;
+  }, []);
+
+  // Ordered list of axis ids currently referenced by the formula.
+  // Order is preserved so the checkbox UI shows the user's actual
+  // multiplication order (e.g. checking water then temp yields
+  // "w * t", not "t * w"). When the formula is empty or contains
+  // non-ident tokens we still extract whichever idents we find --
+  // toggling will overwrite the formula with a pure-multiplication
+  // version anyway, so it's only a hint for the checkboxes.
+  const formulaIdentIds = useMemo<string[]>(() => {
+    const toks = tokenize(formula).filter((t) => t.type !== 'space');
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const t of toks) {
+      if (t.type !== 'ident') continue;
+      const id = resolveAxisAlias(t.text);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }, [formula]);
+  const formulaIdentSet = useMemo(() => new Set(formulaIdentIds), [formulaIdentIds]);
+
+  // Find all axis options (main + submenus) so a checkbox toggle can
+  // resolve any id back to the token we want to emit.
+  const allOptionsById = useMemo(() => {
+    const m = new Map<string, AxisOption>();
+    for (const a of axes) m.set(a.id, a);
+    for (const a of energySubAxes ?? []) m.set(a.id, a);
+    for (const a of hazardSubAxes ?? []) m.set(a.id, a);
+    return m;
+  }, [axes, energySubAxes, hazardSubAxes]);
+
+  const toggleAxisInFormula = useCallback((a: AxisOption) => {
+    const isChecked = formulaIdentSet.has(a.id);
+    const nextIds = isChecked
+      ? formulaIdentIds.filter((id) => id !== a.id)
+      : [...formulaIdentIds, a.id];
+    const newFormula = nextIds
+      .map((id) => formulaTokenFor(allOptionsById.get(id) ?? a))
+      .join(' * ');
+    onFormulaChange(newFormula);
+    onFormulaCommit?.(newFormula);
+  }, [formulaIdentSet, formulaIdentIds, formulaTokenFor, allOptionsById, onFormulaChange, onFormulaCommit]);
 
   return (
     <>
@@ -336,19 +393,40 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
             ] as { key: string; label: string; items?: AxisOption[] }[])
               .filter((g) => g.items && g.items.length > 0);
 
-            const renderAxis = (a: AxisOption) => (
-              <button
-                key={a.id}
-                className={`axis-menu-item${a.id === activeAxisId ? ' active' : ''}`}
-                onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
-              >
-                <span>{a.label}</span>
-                <span className="axis-menu-right">
-                  <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
-                  {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
-                </span>
-              </button>
-            );
+            const renderAxis = (a: AxisOption) => {
+              const isInFormula = formulaIdentSet.has(a.id);
+              return (
+                <div
+                  key={a.id}
+                  className={`axis-menu-item${a.id === activeAxisId ? ' active' : ''}${isInFormula ? ' in-formula' : ''}`}
+                  onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <span>{a.label}</span>
+                  <span className="axis-menu-right">
+                    <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
+                    {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
+                    <label
+                      className="axis-menu-check"
+                      onClick={(e) => e.stopPropagation()}
+                      title={isInFormula
+                        ? `Remove "${a.label}" from the formula`
+                        : `Add "${a.label}" to the formula (multiplicative)`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isInFormula}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleAxisInFormula(a);
+                        }}
+                      />
+                    </label>
+                  </span>
+                </div>
+              );
+            };
 
             const renderSubmenuGroups = () => submenuGroups.flatMap((group) => {
               const isOpen = openSubMenu === group.key;
@@ -364,20 +442,41 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
                 </button>
               );
               if (!isOpen) return [trigger];
-              const subItems = group.items!.map((a, idx) => (
-                <button
-                  key={a.id}
-                  ref={idx === 0 ? firstSubRef : undefined}
-                  className={`axis-menu-item axis-menu-subitem${a.id === activeAxisId ? ' active' : ''}`}
-                  onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
-                >
-                  <span>{a.label}</span>
-                  <span className="axis-menu-right">
-                    <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
-                    {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
-                  </span>
-                </button>
-              ));
+              const subItems = group.items!.map((a, idx) => {
+                const isInFormula = formulaIdentSet.has(a.id);
+                return (
+                  <div
+                    key={a.id}
+                    ref={idx === 0 ? firstSubRef : undefined}
+                    className={`axis-menu-item axis-menu-subitem${a.id === activeAxisId ? ' active' : ''}${isInFormula ? ' in-formula' : ''}`}
+                    onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <span>{a.label}</span>
+                    <span className="axis-menu-right">
+                      <span className="axis-menu-hint">{a.displayId ?? a.id}</span>
+                      {a.hotkey && <kbd className="axis-menu-hotkey">{a.hotkey.toUpperCase()}</kbd>}
+                      <label
+                        className="axis-menu-check"
+                        onClick={(e) => e.stopPropagation()}
+                        title={isInFormula
+                          ? `Remove "${a.label}" from the formula`
+                          : `Add "${a.label}" to the formula (multiplicative)`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isInFormula}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleAxisInFormula(a);
+                          }}
+                        />
+                      </label>
+                    </span>
+                  </div>
+                );
+              });
               return [trigger, ...subItems];
             });
 

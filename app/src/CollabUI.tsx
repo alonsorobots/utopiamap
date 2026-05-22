@@ -56,31 +56,36 @@ export function CollabBar({ enabled, status, peers, roomId, onEnd, onJumpToPeer 
       <div className="collab-peers">
         {peers.slice(0, 6).map((p) => {
           const canJump = !!p.view && !!onJumpToPeer;
-          const title = canJump
-            ? `Jump to ${p.name}'s view${p.axis ? ` (looking at ${p.axis})` : ''}`
-            : `${p.name}${p.axis ? ` -- ${p.axis}` : ''} (no shared view yet)`;
+          const nameTitle = `${p.name}${p.axis ? ` -- looking at ${p.axis}` : ''}`;
           return (
-            <button
+            <div
               key={p.userId}
-              type="button"
-              className={`collab-peer${canJump ? ' collab-peer-jumpable' : ''}`}
+              className="collab-peer-group"
               // Faint tint of the peer's own colour so a glance at the bar
               // tells you which dot belongs to which name -- without
               // washing out the text the way a saturated background did.
               style={{
                 background: tint(p.color, 0.18),
                 borderColor: tint(p.color, 0.45),
-                color: 'rgba(255,255,255,0.92)',
               }}
-              title={title}
-              aria-label={title}
-              onClick={() => { if (canJump) onJumpToPeer!(p); }}
-              disabled={!canJump}
             >
-              <span className="collab-peer-dot" style={{ background: p.color }} />
-              <span className="collab-peer-name">{firstName(p.name)}</span>
-              {canJump && <span className="collab-peer-jump-icon"><LocateIcon /></span>}
-            </button>
+              <span className="collab-peer-name" title={nameTitle}>
+                <span className="collab-peer-dot" style={{ background: p.color }} />
+                {p.name}
+              </span>
+              {canJump && (
+                <button
+                  type="button"
+                  className="collab-peer-sync"
+                  onClick={() => onJumpToPeer!(p)}
+                  title={`Sync your camera to ${p.name}`}
+                  aria-label={`Sync your camera to ${p.name}`}
+                >
+                  <span className="collab-peer-sync-icon"><LocateIcon /></span>
+                  <span className="collab-peer-sync-label">sync camera</span>
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
@@ -97,23 +102,6 @@ function statusLabel(s: CollabStatus): string {
   if (s.state === 'connected') return 'connected';
   if (s.state === 'connecting') return 'connecting...';
   return 'disconnected (will retry)';
-}
-
-// Names are pulled from the EXPLORER_NAMES pool, which includes
-// titles like "Cpt. Sully" -- strip the title so the pill shows
-// "Sully" not "Cpt." -- and otherwise keep the first whitespace
-// token so "Carl Sagan" -> "Carl". Whole-name still appears in the
-// pill's tooltip.
-function firstName(name: string): string {
-  const cleaned = name.trim();
-  if (!cleaned) return 'guest';
-  const parts = cleaned.split(/\s+/);
-  const TITLE_RE = /^(?:Cpt\.?|Capt\.?|Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Lt\.?|Sir|Lord|Lady|Princess|Prince|Doctor)$/i;
-  // Skip past leading title tokens until we hit something with letters.
-  for (const p of parts) {
-    if (!TITLE_RE.test(p)) return p;
-  }
-  return parts[parts.length - 1];
 }
 
 // Mix a peer's hex colour with the panel's dark background so the

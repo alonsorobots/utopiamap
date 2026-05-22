@@ -604,15 +604,26 @@ function generateUserId(): string {
 
 // Deliberately diverse: weighted toward women, people of colour, and
 // explorers from outside the European tradition, with a sprinkle of
-// fictional captains for fun. The user explicitly requested Cpt. Sully,
-// Odysseus, Argonaut, Carl Sagan and Magellan, so they're at the top.
+// fictional captains for fun.
+//
+// Inclusion rule: someone who *physically went somewhere* -- by foot,
+// boat, plane, rocket, or submarine -- on the frontier of what was
+// known to their culture. Lab scientists and pure theorists don't fit
+// the metaphor of "exploring a map" no matter how brilliant they
+// were (sorry Marie Curie / Katherine Johnson / Annie Easley /
+// Wangari Maathai / Marie Tharp -- you belong on a different list).
+//
+// The user explicitly requested Cpt. Sully, Odysseus, Argonaut, Carl
+// Sagan and Magellan, so they're pinned at the top.
 const EXPLORER_NAMES = [
   'Cpt. Sully',
   'Odysseus',
   'Argonaut',
   'Carl Sagan',
   'Magellan',
-  // Real-world explorers, scientists, astronauts, navigators
+  // Real-world explorers, navigators, astronauts, mountaineers,
+  // field-naturalists, polar survivors, and travel writers who
+  // covered serious ground.
   'Sacagawea',
   'Ibn Battuta',
   'Zheng He',
@@ -624,12 +635,8 @@ const EXPLORER_NAMES = [
   'Tenzing Norgay',
   'Sylvia Earle',
   'Jane Goodall',
-  'Wangari Maathai',
-  'Katherine Johnson',
   'Matthew Henson',
   'Ada Blackjack',
-  'Marie Tharp',
-  'Annie Easley',
   'Gertrude Bell',
   'Maria Sibylla Merian',
   'Yuri Gagarin',
@@ -640,7 +647,6 @@ const EXPLORER_NAMES = [
   'Mary Leakey',
   'Amelia Earhart',
   'Nellie Bly',
-  'Marie Curie',
   'Mary Kingsley',
   'Pytheas',
   'Vasco da Gama',
@@ -649,7 +655,13 @@ const EXPLORER_NAMES = [
   'Hiram Bingham',
   'Roy Chapman Andrews',
   'Gertrude Ederle',
-  // Fictional captains and adventurers (tongue-in-cheek)
+  'Sally Ride',
+  'Freya Stark',
+  'Harriet Chalmers Adams',
+  'Jeanne Baret',
+  // Fictional captains and adventurers (tongue-in-cheek). Each one
+  // is canonically someone who *goes places* in their fiction --
+  // rebels and freedom fighters who don't travel don't count.
   'Lt. Uhura',
   'Cpt. Picard',
   'Cpt. Janeway',
@@ -657,7 +669,6 @@ const EXPLORER_NAMES = [
   'Indiana Jones',
   'Dora the Explorer',
   'Doctor Who',
-  'Princess Leia',
   'Cpt. Nemo',
 ];
 

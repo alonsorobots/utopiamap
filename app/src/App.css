@@ -1596,33 +1596,40 @@
 .collab-dot-connecting { background: #facc15; }
 .collab-dot-disconnected { background: #f87171; }
 
-/* Named peer pills. Each pill = one peer present in the room. When
-   the peer has published a camera, the pill is a clickable button
-   that flies your map to where they're looking; the locate icon
-   makes that action explicit so "click an avatar" is no longer a
-   thing users have to guess at. */
+/* Named peer pills. Each pill = one peer present in the room.
+   Layout: a non-interactive name segment (dot + full name) plus, if
+   the peer has published a camera, a small icon button to the right
+   that flies your map to where they're looking. The button is
+   icon-only by default and expands to reveal "sync camera" on
+   hover -- this keeps the bar compact at idle and makes the action
+   explicit on intent. */
 .collab-peers {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
 }
-.collab-peer {
+.collab-peer-group {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 24px;
-  padding: 0 8px 0 6px;
+  padding: 0 4px 0 8px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+.collab-peer-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font: 600 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: rgba(255, 255, 255, 0.92);
-  background: rgba(255, 255, 255, 0.06);
-  cursor: default;
-  appearance: none;
-  -webkit-appearance: none;
+  letter-spacing: 0.02em;
   white-space: nowrap;
-  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .collab-peer-dot {
   width: 8px;
@@ -1630,43 +1637,54 @@
   border-radius: 50%;
   flex: 0 0 8px;
 }
-.collab-peer-name {
-  letter-spacing: 0.02em;
-  max-width: 90px;
+.collab-peer-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  border: none;
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
   overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 22px;
+  white-space: nowrap;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: max-width 200ms ease, background 160ms ease, color 160ms ease;
 }
-.collab-peer-jump-icon {
+.collab-peer-sync-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.85;
-  margin-left: -2px;
+  flex: 0 0 13px;
 }
-.collab-peer-jumpable {
-  cursor: pointer;
+.collab-peer-sync-label {
+  font: 600 10px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 140ms 80ms ease;
 }
-.collab-peer-jumpable:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.15);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+.collab-peer-sync:hover,
+.collab-peer-sync:focus-visible {
+  max-width: 140px;
+  background: rgba(255, 214, 107, 0.18);
+  color: #ffd66b;
+  outline: none;
 }
-.collab-peer-jumpable:hover .collab-peer-jump-icon {
+.collab-peer-sync:hover .collab-peer-sync-label,
+.collab-peer-sync:focus-visible .collab-peer-sync-label {
   opacity: 1;
 }
-.collab-peer-jumpable:focus-visible {
-  outline: 2px solid #ffd66b;
-  outline-offset: 1px;
-}
-.collab-peer:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-/* Narrow screens: collapse the name to free space. The dot still
-   identifies the peer and the tooltip still shows the full name. */
+/* Narrow screens: tighten the name max-width but keep it visible --
+   the whole point of this redesign is that "Marie" alone reads as
+   "who?". If a phone really can't fit, the menu wraps to a second row
+   thanks to flex-wrap on .collab-peers above. */
 @media (max-width: 560px) {
-  .collab-peer-name { display: none; }
-  .collab-peer { padding: 0 6px; }
+  .collab-peer-name { max-width: 110px; }
 }
 
 /* Cursor overlay sits above the map but below the top bar so the

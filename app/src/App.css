@@ -1990,25 +1990,42 @@
   z-index: -1;
 }
 
+/* Skip / close control. Lives ABOVE the data-grid stage (z-index)
+ * so it stays visible during the cinematic -- the previous version
+ * was hidden behind the grid's full-viewport black backdrop, which
+ * is the "skip button not visible at all" bug the user reported. */
 .intro-skip {
   position: absolute;
-  top: 18px;
-  right: 18px;
-  padding: 6px 14px;
-  background: rgba(20, 22, 30, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  color: #c0c0d0;
-  font-size: 12px;
-  letter-spacing: 0.04em;
+  top: 5vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 300;
+  background: rgba(20, 22, 30, 0.80);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  color: #fff;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.5s ease, background 0.15s, border-color 0.15s, color 0.15s;
+  transition: opacity 0.4s ease, background 0.15s, border-color 0.15s, transform 0.15s;
   backdrop-filter: blur(8px);
+  z-index: 100;
+  pointer-events: auto;
 }
 
-.intro-skip.visible { opacity: 0.85; }
-.intro-skip:hover { opacity: 1; background: rgba(40, 44, 56, 0.85); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
+.intro-skip.visible { opacity: 0.92; }
+.intro-skip:hover {
+  opacity: 1;
+  background: rgba(40, 44, 56, 0.95);
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateX(-50%) scale(1.06);
+}
 
 .intro-caption {
   text-align: center;
@@ -2056,7 +2073,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  perspective: 1500px;
+  /* Stronger perspective + camera positioned above-centre, so the
+   * front rows read closer to head-on (less foreshortening) and
+   * the back rows recede with a visible three-point taper. */
+  perspective: 950px;
+  perspective-origin: 50% 25%;
   overflow: hidden;
   background:
     radial-gradient(ellipse at center, rgba(20, 22, 32, 0.0) 0%, rgba(8, 9, 14, 0.85) 75%),
@@ -2067,15 +2088,16 @@
 .intro-grid-tilt {
   position: relative;
   transform-style: preserve-3d;
-  /* 58° gives us the inFORM "table tilted away from you" feel
-   * without flattening into pure isometric; -12° on Z adds the
-   * subtle off-axis camera that makes lifted pins read as a 3D
-   * mass instead of a uniform pattern. */
-  transform: rotateX(58deg) rotateZ(-12deg);
-  /* Compensate for the visual centre shifting up after the X-tilt
-   * (the grid's far edge moves toward screen-top), so the whole
-   * stage still reads as centred in the viewport. */
-  margin-top: -40px;
+  /* Subtle bird's-eye: 35° tilt keeps front cubes nearly head-on
+   * while still revealing top faces clearly; combined with the
+   * above-centre perspective-origin, this gives a clean three-point
+   * recession on the back rows. No Z-rotation -- the camera is
+   * dead-centre on the grid, which the user explicitly asked for. */
+  transform: rotateX(35deg);
+  /* The X-tilt shifts the visual centre downward (because the far
+   * edge swings up toward screen-top); pull the grid up to keep
+   * the whole composition centred in the viewport. */
+  margin-top: -60px;
 }
 
 .intro-pin {
@@ -2083,81 +2105,115 @@
   width: 36px;
   height: 36px;
   transform-style: preserve-3d;
-  --lift: 0px;
+  --lift: 0;        /* unitless 0..MAX_LIFT (≈24) */
   --hue: #5a3a56;
 }
 
-/* Top face: lifted via translateZ, with an inset top-left highlight
- * (cheap specular) and a 1px dark inset shadow at the edges (cheap
- * ambient occlusion at the seams between top and sides). */
+/* Top face: lifted via translateZ. No specular highlight any more --
+ * the previous radial-gradient at 30% 25% read as a "weird circle"
+ * on every flat pin (the user reported this), and a true 3D look
+ * doesn't need a fake highlight when the sides do the lighting work.
+ * Edge AO is a stronger 2-layer inset shadow now: a crisp 1px dark
+ * border for the seam, plus a softer 4px inset shadow that visibly
+ * darkens the corners where adjacent pins meet, producing the
+ * "valley between pins is darker" cue the user asked for. */
 .intro-pin-top {
   position: absolute;
   inset: 0;
   width: 36px;
   height: 36px;
-  background:
-    radial-gradient(120% 120% at 30% 25%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 55%),
-    var(--hue);
-  border-radius: 3px;
-  transform: translateZ(var(--lift));
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.22);
+  background: var(--hue);
+  border-radius: 2px;
+  transform: translateZ(calc(var(--lift) * 1px));
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+    inset 0 0 6px rgba(0, 0, 0, 0.35);
   will-change: transform, background;
 }
 
-/* Side walls share a base: same hue as the top face, multiplied with
- * a dark vertical gradient so they auto-shade to a believable
- * "wall in shadow" without needing a per-hue palette. */
+/* Side walls share a base: same hue as the top face, multiplied
+ * with a dark vertical gradient so they auto-shade to a believable
+ * "wall in shadow" without needing a per-hue palette. Direction
+ * reversed below for each specific wall so the darker end always
+ * lands at the BOTTOM of the wall in 3D space (i.e. at the base
+ * where light reaches least) regardless of which sign of rotation
+ * we use to put the wall in place. */
 .intro-pin-side {
   position: absolute;
   background: var(--hue);
   background-image: linear-gradient(to bottom,
-    rgba(0,0,0,0.32) 0%,
-    rgba(0,0,0,0.58) 100%);
+    rgba(0, 0, 0, 0.32) 0%,
+    rgba(0, 0, 0, 0.62) 100%);
   background-blend-mode: multiply;
   will-change: height, width;
+  /* Default backface visibility is already `visible` but spelling
+   * it out guards against any browser default flips and against
+   * future stylesheets accidentally turning it off. We rely on the
+   * back face being the same as the front (uniform gradient) so
+   * whichever side ends up facing the camera reads correctly. */
+  backface-visibility: visible;
 }
 
-/* Front wall: stands up from the front edge of the top face. The
- * wall is a `height: var(--lift)` rectangle whose top edge sits at
- * y=36 of the pin (the front edge of the 36×36 top face), pivoted
- * around its top so a rotateX(90deg) makes the bottom edge swing
- * "up" (in pin-local Z) to meet the lifted top face. As --lift
- * grows, the wall literally grows; when --lift=0 the wall has 0
- * height and disappears, so flat pins read as stickers. */
+/* Front wall: a `height = lift` rectangle whose top edge sits at
+ * y=36 (the front edge of the top face). We pivot around the top
+ * edge and then apply BOTH rotateX(90deg) and rotateZ(180deg).
+ *
+ * Geometry: rotateX(90deg) around the top edge swings the rectangle
+ * up out of the grid plane so its formerly-bottom edge ends up at
+ * z = lift, exactly meeting the lifted top face.
+ *
+ * Why the extra rotateZ(180deg): without it the wall's styled
+ * front-face normal points AWAY from the camera (toward the back
+ * of the scene). The default backface-visibility=visible still
+ * renders it, but on some browsers / GPU paths the back face was
+ * dropping out entirely (this is the "sides of the cubes seem to
+ * be missing" bug the user reported). Adding the 180° Z flip turns
+ * the wall around its own normal so the styled front face ends up
+ * facing the camera; as a bonus this also reverses the gradient
+ * so the darker end correctly lands at the base of the wall. */
 .intro-pin-side-front {
   width: 36px;
-  height: var(--lift);
+  height: calc(var(--lift) * 1px);
   top: 36px;
   left: 0;
-  transform-origin: 50% 0%;
-  transform: rotateX(90deg);
+  transform-origin: 50% 0% 0;
+  transform: rotateZ(180deg) rotateX(90deg);
 }
 
-/* Right wall: mirror logic on the right edge of the pin, rotated
- * around the Y axis. Dimmed an extra ~18% via filter:brightness
+/* Right wall: same idea on the right edge. rotateY(-90deg) around
+ * the left edge stands the wall up to meet the right edge of the
+ * top face; rotateZ(180deg) flips the normal so the front face
+ * faces the camera. Then a brightness(0.82) dims the wall a touch
  * because in our implied-lighting model this face turns away from
- * the light (which "comes from" the upper-front by convention). */
+ * the light. */
 .intro-pin-side-right {
-  width: var(--lift);
+  width: calc(var(--lift) * 1px);
   height: 36px;
   top: 0;
   left: 36px;
-  transform-origin: 0% 50%;
-  transform: rotateY(-90deg);
+  transform-origin: 0% 50% 0;
+  transform: rotateZ(180deg) rotateY(-90deg);
   filter: brightness(0.82);
 }
 
 /* Ground shadow: stays on the floor plane (translateZ ≈ 0), grows
- * in opacity with --lift. Cheap stand-in for a proper cast shadow;
- * sufficient to anchor the lifted pin to the table visually. */
+ * larger and darker with --lift. Tuned bigger than the pin's
+ * footprint so the shadow spills onto adjacent flat pins, giving
+ * us the "valley between a tall and a short pin is darker" cue
+ * for free. */
 .intro-pin-shadow {
   position: absolute;
-  inset: -4px;
-  background: radial-gradient(50% 50% at 50% 60%,
-    rgba(0,0,0,0.65) 0%,
-    rgba(0,0,0,0) 70%);
+  inset: -14px;
+  background: radial-gradient(46% 42% at 50% 64%,
+    rgba(0, 0, 0, 0.85) 0%,
+    rgba(0, 0, 0, 0) 78%);
   transform: translateZ(0.1px);
-  opacity: calc(var(--lift) / 30);
+  /* Unitless --lift makes this calc return a plain number, which
+   * opacity actually accepts -- the previous px-valued version
+   * silently failed and left a faint shadow visible under every
+   * pin even at lift=0. MAX_LIFT in IntroDataGrid is 24, so the
+   * shadow reaches full strength right at the wave peak. */
+  opacity: calc(var(--lift) / 24);
   pointer-events: none;
 }
 

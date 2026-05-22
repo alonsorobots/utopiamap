@@ -35,7 +35,7 @@ interface IntroProps {
   }) => void;
 }
 
-const SKIP_REVEAL_DELAY_MS = 3000;
+const SKIP_REVEAL_DELAY_MS = 1200;
 
 export function Intro({ api, onFinish, onCommit }: IntroProps) {
   const [stage, setStage] = useState<Stage>('cinematic');
@@ -123,6 +123,17 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
     window.setTimeout(() => onFinish(), 400);
   }, [onFinish]);
 
+  // Escape dismisses the intro at any stage. The user pointed out
+  // that not everyone will hunt for the skip button, and a keyboard
+  // escape is a universal "get me out of here" affordance.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onSkip();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onSkip]);
+
   // ── Render ────────────────────────────────────────────────────────
 
   const chosenChips = useMemo<AxisChip[]>(() =>
@@ -141,9 +152,10 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
       <button
         className={`intro-skip${skipVisible ? ' visible' : ''}`}
         onClick={onSkip}
-        aria-label="Skip intro"
+        aria-label="Skip intro (Escape)"
+        title="Skip intro (Escape)"
       >
-        Skip
+        ×
       </button>
 
       {stage === 'cinematic' && (

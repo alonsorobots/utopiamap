@@ -310,7 +310,14 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
         const s = pinStateAt(sceneId, t, c.col, c.row);
         const el = pinRefs.current[i];
         if (el) {
-          el.style.setProperty('--lift', `${s.lift.toFixed(2)}px`);
+          // Unitless on purpose: CSS uses calc(var(--lift) * 1px)
+          // where it needs a length and a plain calc(var(--lift) / N)
+          // where it needs a number (opacity). A px-valued custom
+          // property would make the opacity calc return a length and
+          // get treated as invalid, so the shadow stayed permanently
+          // visible -- which read on screen as a "weird circle"
+          // under every pin even when fully down.
+          el.style.setProperty('--lift', s.lift.toFixed(2));
           el.style.setProperty('--hue', s.color);
         }
       }
@@ -341,7 +348,7 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
             className="intro-pin"
             style={{
               transform: `translate3d(${c.x}px, ${c.y}px, 0)`,
-              ['--lift' as never]: '0px',
+              ['--lift' as never]: '0',
               ['--hue' as never]: COLOR_FLAT,
             }}
           >

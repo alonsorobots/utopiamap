@@ -1596,61 +1596,77 @@
 .collab-dot-connecting { background: #facc15; }
 .collab-dot-disconnected { background: #f87171; }
 
-.collab-avatars { display: flex; gap: -4px; }
-.collab-avatar {
-  width: 22px;
-  height: 22px;
+/* Named peer pills. Each pill = one peer present in the room. When
+   the peer has published a camera, the pill is a clickable button
+   that flies your map to where they're looking; the locate icon
+   makes that action explicit so "click an avatar" is no longer a
+   thing users have to guess at. */
+.collab-peers {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.collab-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font: 600 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: default;
+  appearance: none;
+  -webkit-appearance: none;
+  white-space: nowrap;
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+.collab-peer-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
+  flex: 0 0 8px;
+}
+.collab-peer-name {
+  letter-spacing: 0.02em;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.collab-peer-jump-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.7);
-  border: 1.5px solid rgba(20, 20, 26, 0.95);
-  margin-left: -6px;
+  opacity: 0.85;
+  margin-left: -2px;
 }
-.collab-avatar:first-child { margin-left: 0; }
-.collab-avatar {
-  /* Reset the implicit <button> chrome since we're using one now so
-     the chip can be clicked to jump to the peer's camera. */
-  padding: 0;
-  cursor: default;
-  outline: none;
-  appearance: none;
-  -webkit-appearance: none;
-}
-.collab-avatar-jumpable {
+.collab-peer-jumpable {
   cursor: pointer;
-  position: relative;
-  transition: transform 120ms ease, box-shadow 120ms ease;
 }
-.collab-avatar-jumpable:hover {
-  transform: scale(1.12);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45);
+.collab-peer-jumpable:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
-.collab-avatar-jumpable:focus-visible {
-  box-shadow: 0 0 0 2px #ffd66b;
+.collab-peer-jumpable:hover .collab-peer-jump-icon {
+  opacity: 1;
 }
-/* Small "jump-to" indicator pinned to the avatar's top-right so it's
-   obvious the chip is clickable. Hidden on non-jumpable chips (peer
-   has not yet published a camera) so the affordance only appears when
-   the action actually does something. */
-.collab-avatar-jump-icon {
-  position: absolute;
-  top: -3px;
-  right: -4px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #ffd66b;
-  color: #1a1d22;
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 11px;
-  text-align: center;
-  border: 1px solid rgba(20, 20, 26, 0.95);
-  pointer-events: none;
+.collab-peer-jumpable:focus-visible {
+  outline: 2px solid #ffd66b;
+  outline-offset: 1px;
+}
+.collab-peer:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+/* Narrow screens: collapse the name to free space. The dot still
+   identifies the peer and the tooltip still shows the full name. */
+@media (max-width: 560px) {
+  .collab-peer-name { display: none; }
+  .collab-peer { padding: 0 6px; }
 }
 
 /* Cursor overlay sits above the map but below the top bar so the

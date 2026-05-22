@@ -1,16 +1,31 @@
 // UI bits for real-time collaboration.
 //
-//   - <CollabBar>  compact strip with the presence count and a stack
-//     of avatar dots so you can see who's connected. Only renders
-//     while you're actually inside a room.
+//   - <CollabBar>  compact strip with the presence count and a row
+//     of named peer pills. Each pill is a "jump to where they're
+//     looking" button when the peer has published a camera, with a
+//     locate icon (the same crosshair-in-circle convention as
+//     "find me" on phone maps) so the action is unambiguous.
 //
 // Per-pixel mouse cursor sharing was removed deliberately to stay
 // inside the Cloudflare Workers free plan (100k requests/day) -- the
 // mousemove broadcast was the only thing that put real load on the
 // relay. Awareness still flows for join/leave + name + active axis,
-// which is enough for "we're looking at the same map together".
+// plus a debounced per-peer camera so the jump-to-peer chips work,
+// which is enough for "we're exploring the same map together".
 
 import type { CollabStatus, PeerCursor } from './collab';
+
+// Material Design "my_location" -- the universally-recognised "find
+// me on the map" crosshair-in-circle. Drawn as currentColor so it
+// picks up the pill's text colour and stays legible against any
+// peer-tint background.
+function LocateIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
+    </svg>
+  );
+}
 
 interface BarProps {
   enabled: boolean;
@@ -38,25 +53,33 @@ export function CollabBar({ enabled, status, peers, roomId, onEnd, onJumpToPeer 
         <span className={`collab-dot collab-dot-${status.state}`} />
         {peers.length === 0 ? 'just you' : `${peers.length + 1} here`}
       </span>
-      <div className="collab-avatars">
+      <div className="collab-peers">
         {peers.slice(0, 6).map((p) => {
           const canJump = !!p.view && !!onJumpToPeer;
           const title = canJump
-            ? `${p.name}${p.axis ? ` -- ${p.axis}` : ''} (click to jump to their view)`
-            : `${p.name}${p.axis ? ` -- ${p.axis}` : ''} (move their map first to enable jump)`;
+            ? `Jump to ${p.name}'s view${p.axis ? ` (looking at ${p.axis})` : ''}`
+            : `${p.name}${p.axis ? ` -- ${p.axis}` : ''} (no shared view yet)`;
           return (
             <button
               key={p.userId}
               type="button"
-              className={`collab-avatar${canJump ? ' collab-avatar-jumpable' : ''}`}
-              style={{ background: p.color }}
+              className={`collab-peer${canJump ? ' collab-peer-jumpable' : ''}`}
+              // Faint tint of the peer's own colour so a glance at the bar
+              // tells you which dot belongs to which name -- without
+              // washing out the text the way a saturated background did.
+              style={{
+                background: tint(p.color, 0.18),
+                borderColor: tint(p.color, 0.45),
+                color: 'rgba(255,255,255,0.92)',
+              }}
               title={title}
+              aria-label={title}
               onClick={() => { if (canJump) onJumpToPeer!(p); }}
               disabled={!canJump}
-              aria-label={title}
             >
-              {initials(p.name)}
-              {canJump && <span className="collab-avatar-jump-icon" aria-hidden="true">↗</span>}
+              <span className="collab-peer-dot" style={{ background: p.color }} />
+              <span className="collab-peer-name">{firstName(p.name)}</span>
+              {canJump && <span className="collab-peer-jump-icon"><LocateIcon /></span>}
             </button>
           );
         })}
@@ -76,9 +99,34 @@ function statusLabel(s: CollabStatus): string {
   return 'disconnected (will retry)';
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+// Names are pulled from the EXPLORER_NAMES pool, which includes
+// titles like "Cpt. Sully" -- strip the title so the pill shows
+// "Sully" not "Cpt." -- and otherwise keep the first whitespace
+// token so "Carl Sagan" -> "Carl". Whole-name still appears in the
+// pill's tooltip.
+function firstName(name: string): string {
+  const cleaned = name.trim();
+  if (!cleaned) return 'guest';
+  const parts = cleaned.split(/\s+/);
+  const TITLE_RE = /^(?:Cpt\.?|Capt\.?|Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Lt\.?|Sir|Lord|Lady|Princess|Prince|Doctor)$/i;
+  // Skip past leading title tokens until we hit something with letters.
+  for (const p of parts) {
+    if (!TITLE_RE.test(p)) return p;
+  }
+  return parts[parts.length - 1];
+}
+
+// Mix a peer's hex colour with the panel's dark background so the
+// pill is recognisably "theirs" without making the text unreadable.
+// `alpha` is the colour's contribution; the rest is panel-dark.
+function tint(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return 'rgba(255,255,255,0.06)';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  // Blend toward #1a1d23 (the bar background).
+  const blend = (c: number) => Math.round(c * alpha + 0x1a * (1 - alpha));
+  return `rgb(${blend(r)}, ${blend(g)}, ${blend(b)})`;
 }

@@ -185,21 +185,25 @@ function buildAreaPath(points: CurvePoint[], svgW: number, svgH: number): string
 }
 
 // Vertical fill stops, hand-picked to read like what the user
-// actually sees on the rendered map. Earlier auto-derived gradients
-// (raw cm_warm; cm_warm * t; cm_warm * t + basemap tint; and a
-// horizontal version sampled from the curve) all over-saturated
-// or over-darkened compared to the muted, slightly-translucent feel
-// of the live heatmap composite. These four stops, written
-// bottom -> top (baseline to peak), match what the eye reads:
-//   - fully transparent at the baseline (basemap shows through),
+// actually sees on the rendered map. Written bottom -> top:
+//   - the first ~10% is *held* fully transparent so the baseline
+//     reads as "nothing" instead of "dim purple with low alpha"
+//     (SVG interpolates colour AND opacity linearly between stops,
+//     so a single 0% stop at opacity 0 still produces ~half-alpha
+//     dusty purple immediately above it -- which is exactly the
+//     "first color is dark purple with some transparency" complaint
+//     this stop layout solves),
 //   - dusty plum in the lower mid,
 //   - warm rust in the upper mid,
 //   - amber-gold at the peak (where the curve actually is).
+// All visible stops carry a global -20% opacity bias vs the first
+// pass so the fill sits more lightly against the basemap colours.
 const AREA_FILL_STOPS: { offset: string; color: string; opacity: number }[] = [
   { offset: '0%',   color: '#5a3a56', opacity: 0.0  },
-  { offset: '33%',  color: '#5a3a56', opacity: 0.85 },
-  { offset: '66%',  color: '#a75b4d', opacity: 0.95 },
-  { offset: '100%', color: '#c69c42', opacity: 0.75 },
+  { offset: '10%',  color: '#5a3a56', opacity: 0.0  },
+  { offset: '40%',  color: '#5a3a56', opacity: 0.68 },
+  { offset: '70%',  color: '#a75b4d', opacity: 0.76 },
+  { offset: '100%', color: '#c69c42', opacity: 0.60 },
 ];
 
 const AREA_FILL_GRAD_ID = 'curveAreaFillGradient';

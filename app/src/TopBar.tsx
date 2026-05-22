@@ -2,6 +2,59 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { FormulaBar } from './FormulaBar';
 import { tokenize, resolveAxisAlias } from './formulaParser';
 
+// ── Formula-edit helpers (used by the menu checkboxes) ──────────────
+//
+// Goal: a checkbox tick should *augment* whatever the user has typed,
+// not rewrite it. So "a - z" + check Solar yields "a - z * s" (append
+// with implicit multiply), not "a * z * s" (rebuild-from-set). When
+// the user unticks a feature we surgically excise it plus exactly one
+// adjacent operator, preferring the right side so parens and outer
+// structure survive.
+
+function appendAxisToFormulaString(formula: string, token: string): string {
+  const trimmed = formula.trim();
+  if (trimmed === '') return token;
+  return `${trimmed} * ${token}`;
+}
+
+function removeAxisFromFormulaString(formula: string, targetAxisId: string): string {
+  const toks = tokenize(formula);
+  const targets = toks.filter(
+    (t) => t.type === 'ident' && resolveAxisAlias(t.text) === targetAxisId,
+  );
+  if (targets.length === 0) return formula;
+  // Walk from end to start so each excision leaves earlier offsets intact.
+  let result = formula;
+  for (const m of targets.slice().reverse()) {
+    result = spliceIdentAndAdjacentOp(result, m.start, m.end);
+  }
+  return result.trim();
+}
+
+// Remove the slice [start, end) plus exactly one adjacent operator
+// (with surrounding whitespace). Prefer the operator to the right so
+// "a - z * s" minus "s" becomes "a - z" rather than the structurally
+// different "a - z" / "a * z". Falls back to the left side for the
+// trailing-token case, and to a bare splice when the ident stands
+// alone.
+function spliceIdentAndAdjacentOp(formula: string, start: number, end: number): string {
+  let i = end;
+  while (i < formula.length && /\s/.test(formula[i])) i++;
+  if (i < formula.length && /[+\-*/]/.test(formula[i])) {
+    i++;
+    while (i < formula.length && /\s/.test(formula[i])) i++;
+    return formula.slice(0, start) + formula.slice(i);
+  }
+  let j = start;
+  while (j > 0 && /\s/.test(formula[j - 1])) j--;
+  if (j > 0 && /[+\-*/]/.test(formula[j - 1])) {
+    j--;
+    while (j > 0 && /\s/.test(formula[j - 1])) j--;
+    return formula.slice(0, j) + formula.slice(end);
+  }
+  return formula.slice(0, start) + formula.slice(end);
+}
+
 export interface AxisOption {
   id: string;
   label: string;
@@ -368,16 +421,14 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
   }, [axes, energySubAxes, hazardSubAxes]);
 
   const toggleAxisInFormula = useCallback((a: AxisOption) => {
+    void allOptionsById; // no longer needed -- left for future use
     const isChecked = formulaIdentSet.has(a.id);
-    const nextIds = isChecked
-      ? formulaIdentIds.filter((id) => id !== a.id)
-      : [...formulaIdentIds, a.id];
-    const newFormula = nextIds
-      .map((id) => formulaTokenFor(allOptionsById.get(id) ?? a))
-      .join(' * ');
+    const newFormula = isChecked
+      ? removeAxisFromFormulaString(formula, a.id)
+      : appendAxisToFormulaString(formula, formulaTokenFor(a));
     onFormulaChange(newFormula);
     onFormulaCommit?.(newFormula);
-  }, [formulaIdentSet, formulaIdentIds, formulaTokenFor, allOptionsById, onFormulaChange, onFormulaCommit]);
+  }, [formula, formulaIdentSet, formulaTokenFor, allOptionsById, onFormulaChange, onFormulaCommit]);
 
   return (
     <>

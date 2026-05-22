@@ -424,15 +424,47 @@
   color: #60a5fa;
 }
 
-/* Subtle indicator that a row is part of the current formula even when
- * it isn't the active axis -- a thin amber bar along the left edge so
- * users can scan the menu and tell which features are multiplied. */
+/* Rows that are part of the current formula get a magenta wash that
+ * echoes the heatmap's mid-stop colour (cm_warm c2 = rgb(145, 11, 128))
+ * so the menu visually reuses the same palette as the rendered map.
+ * Declared after .active so the bg/text from this rule wins for
+ * non-active rows; the compound selector below restores the blue
+ * accent for the currently-selected axis. */
 .axis-menu-item.in-formula {
-  box-shadow: inset 3px 0 0 rgba(250, 204, 21, 0.55);
+  background: rgba(217, 70, 160, 0.20);
+  color: #e9b3d6;
 }
 
-.axis-menu-item.in-formula:not(.active) {
-  color: #d4cfae;
+.axis-menu-item.in-formula:hover {
+  background: rgba(217, 70, 160, 0.32);
+  color: #f5d1e6;
+}
+
+.axis-menu-item.in-formula .axis-menu-hint {
+  color: rgba(233, 179, 214, 0.65);
+}
+
+.axis-menu-item.in-formula .axis-menu-hotkey {
+  color: rgba(233, 179, 214, 0.75);
+  border-color: rgba(217, 70, 160, 0.45);
+}
+
+/* Active + in-formula: keep the blue text/accent so the currently
+ * selected axis is still obvious, but layer it over the magenta bg
+ * (compound selector beats either single class on specificity).  */
+.axis-menu-item.active.in-formula {
+  background: linear-gradient(
+    90deg,
+    rgba(96, 165, 250, 0.18) 0%,
+    rgba(217, 70, 160, 0.22) 100%
+  );
+  color: #60a5fa;
+}
+
+.axis-menu-item.active.in-formula .axis-menu-hint,
+.axis-menu-item.active.in-formula .axis-menu-hotkey {
+  color: rgba(96, 165, 250, 0.7);
+  border-color: rgba(96, 165, 250, 0.3);
 }
 
 /* The "include in formula" checkbox lives inside .axis-menu-right and
@@ -467,12 +499,12 @@
 }
 
 .axis-menu-check input[type="checkbox"]:hover {
-  border-color: rgba(250, 204, 21, 0.6);
+  border-color: rgba(217, 70, 160, 0.7);
 }
 
 .axis-menu-check input[type="checkbox"]:checked {
-  background: rgba(250, 204, 21, 0.85);
-  border-color: rgba(250, 204, 21, 0.9);
+  background: rgba(217, 70, 160, 0.9);
+  border-color: rgba(217, 70, 160, 0.95);
 }
 
 /* Tick mark drawn with CSS so we don't ship an SVG sprite for one
@@ -484,7 +516,7 @@
   top: 0px;
   width: 4px;
   height: 8px;
-  border: solid rgba(15, 15, 25, 0.95);
+  border: solid rgba(255, 255, 255, 0.95);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }

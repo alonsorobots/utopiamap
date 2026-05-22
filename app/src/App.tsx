@@ -1336,7 +1336,7 @@ const HOTKEYS: Record<string, string> = {
   elev: 'l',
   risk: 'k',
   inet: 'i',
-  depv: 'x',
+  depv: 'r',
   hcare: 'h',
   travel: 'm',
   vista: 'o',

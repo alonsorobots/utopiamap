@@ -142,6 +142,17 @@ let currentFormulaExpr: string | null = null;
 let activeAxisId = 'temp';
 let currentYear = 2020;
 let currentScenario = 'historical';
+
+// Real per-GPU upper bound on how many axes a formula can reference.
+// Each axis consumes two texture units (one for the data tile, one for
+// the curve LUT) per draw, so the hard ceiling is
+// MAX_COMBINED_TEXTURE_IMAGE_UNITS / 2. WebGL guarantees at least 8
+// combined units (= 4 axes), and modern GPUs almost universally
+// expose 16-32 (= 8-16 axes). We probe at layer init and surface the
+// number in the formula-bar error message so users know their actual
+// budget instead of hitting an arbitrary wall.
+const FALLBACK_MAX_AXES = 4;
+let maxFormulaAxes = FALLBACK_MAX_AXES;
 let isPrediction = false;
 
 // All axis IDs the heatmap layer can render. MUST be kept in sync with
@@ -834,8 +845,8 @@ export function setFormula(formulaStr: string): FormulaError | null {
     if (unknown.length > 0) {
       return { message: `Unknown: ${unknown.join(', ')}` };
     }
-    if (axisArr.length > 4) {
-      return { message: 'Max 4 axes in a formula' };
+    if (axisArr.length > maxFormulaAxes) {
+      return { message: `Max ${maxFormulaAxes} axes in a formula on this device` };
     }
 
     currentFormulaAxes = axisArr;
@@ -1018,6 +1029,20 @@ export function createHeatmapLayer(): CustomLayerInterface {
     onAdd(map, gl) {
       storedMap = map;
       storedGL = gl;
+
+      // Probe the GPU's combined texture-unit limit and derive the
+      // formula axis cap from it. Halved because each axis binds two
+      // textures (data + curve). Clamped below by FALLBACK_MAX_AXES
+      // so a busted driver can't tighten the cap further than the
+      // spec-guaranteed 4.
+      try {
+        const units = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) as number;
+        if (Number.isFinite(units) && units >= 8) {
+          maxFormulaAxes = Math.max(FALLBACK_MAX_AXES, Math.floor(units / 2));
+        }
+      } catch {
+        // Keep FALLBACK_MAX_AXES on failure.
+      }
 
       vertexBuffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);

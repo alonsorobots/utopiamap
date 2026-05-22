@@ -148,6 +148,58 @@ function buildPath(points: CurvePoint[], svgW: number, svgH: number): string {
   return d;
 }
 
+// Closed-area version of buildPath: same upper boundary (curve +
+// edge tails), with extra segments down to the chart's bottom-right
+// and back across to the bottom-left so the resulting path can be
+// filled. Used to colour the area under the curve with the heatmap
+// colormap so users see the literal palette their curve is sculpting.
+function buildAreaPath(points: CurvePoint[], svgW: number, svgH: number): string {
+  if (points.length < 1) return '';
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+
+  // Chart edges in SVG-pixel space. The +/- INSET accounts for the
+  // small padding toSvg() applies so curve points at x=0/1 sit just
+  // inside the rect border.
+  const leftX = PAD_L + INSET;
+  const rightX = PAD_L + svgW - INSET;
+  const bottomY = PAD + svgH - INSET;
+
+  const first = toSvg(sorted[0].x, sorted[0].y, svgW, svgH);
+  const last = toSvg(sorted[sorted.length - 1].x, sorted[sorted.length - 1].y, svgW, svgH);
+
+  // Start at bottom-left corner of the fill rectangle and walk
+  // clockwise: up the left edge, optionally across the left "tail"
+  // to the first point, through the curve, optionally across the
+  // right tail, down the right edge, back to start.
+  let d = `M ${leftX} ${bottomY}`;
+  d += ` L ${leftX} ${first.cy}`;
+  if (sorted[0].x > 0.005) d += ` L ${first.cx} ${first.cy}`;
+  for (let i = 1; i < sorted.length; i++) {
+    const p = toSvg(sorted[i].x, sorted[i].y, svgW, svgH);
+    d += ` L ${p.cx} ${p.cy}`;
+  }
+  if (sorted[sorted.length - 1].x < 0.995) d += ` L ${rightX} ${last.cy}`;
+  d += ` L ${rightX} ${bottomY}`;
+  d += ' Z';
+  return d;
+}
+
+// Vertical colour ramp matching the cm_warm fragment-shader colormap
+// in heatmapLayer.ts (c0..c4). Ordered top -> bottom = bright ->
+// dark so the gradient aligns with the curve's y semantics: a curve
+// at y=0 (top of chart) maps to LUT value 1.0 = yellow, y=1 (bottom)
+// = 0.0 = near-black. Keeping these literally synced with the shader
+// avoids a "the editor lied" moment when the curve gets applied.
+const CM_WARM_GRADIENT_STOPS: { offset: string; color: string }[] = [
+  { offset: '0%',   color: 'rgb(252, 213, 72)'  }, // c4 yellow
+  { offset: '25%',  color: 'rgb(227, 74, 51)'   }, // c3 orange-red
+  { offset: '50%',  color: 'rgb(145, 11, 128)'  }, // c2 magenta
+  { offset: '75%',  color: 'rgb(48, 11, 102)'   }, // c1 deep purple
+  { offset: '100%', color: 'rgb(1, 0, 5)'       }, // c0 near-black
+];
+
+const CM_WARM_GRADIENT_ID = 'curveAreaWarmGradient';
+
 const BOTTOM_ROW_H = 20;
 const SUBTITLE_H = 14;
 
@@ -364,6 +416,7 @@ export function CurveEditor({
       : null;
 
   const curvePath = useMemo(() => buildPath(displayPoints, svgW, svgH), [displayPoints, svgW, svgH]);
+  const areaPath = useMemo(() => buildAreaPath(displayPoints, svgW, svgH), [displayPoints, svgW, svgH]);
 
   const firstPt = displayPoints[0];
   const lastPt = displayPoints[displayPoints.length - 1];
@@ -392,6 +445,32 @@ export function CurveEditor({
         onDoubleClick={onSvgDoubleClick}
         style={{ touchAction: 'none', display: 'block' }}
       >
+        {/* Heatmap-palette gradient used to fill the area under the
+             curve. Defined once per editor; safe to share an id
+             across multiple mounted editors because every editor
+             paints the same warm ramp. */}
+        <defs>
+          <linearGradient id={CM_WARM_GRADIENT_ID} x1="0%" y1="0%" x2="0%" y2="100%">
+            {CM_WARM_GRADIENT_STOPS.map((s) => (
+              <stop key={s.offset} offset={s.offset} stopColor={s.color} />
+            ))}
+          </linearGradient>
+        </defs>
+
+        {/* Area under the curve, painted with the heatmap palette so
+             users see the literal colors their curve is sculpting.
+             Rendered before grid lines / curve stroke so the curve
+             and handles still read on top. Opacity tuned so the grid
+             stays subtly visible (helps with reading values). */}
+        {areaPath && (
+          <path
+            d={areaPath}
+            fill={`url(#${CM_WARM_GRADIENT_ID})`}
+            opacity={0.55}
+            pointerEvents="none"
+          />
+        )}
+
         {[0.25, 0.5, 0.75].map((f) => (
           <line key={`h${f}`} x1={PAD_L} y1={PAD + f * svgH} x2={PAD_L + svgW} y2={PAD + f * svgH} stroke="#ffffff10" strokeWidth={1} />
         ))}

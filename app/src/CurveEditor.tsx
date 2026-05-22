@@ -184,18 +184,32 @@ function buildAreaPath(points: CurvePoint[], svgW: number, svgH: number): string
   return d;
 }
 
-// Vertical colour ramp matching the cm_warm fragment-shader colormap
-// in heatmapLayer.ts (c0..c4). Ordered top -> bottom = bright ->
-// dark so the gradient aligns with the curve's y semantics: a curve
-// at y=0 (top of chart) maps to LUT value 1.0 = yellow, y=1 (bottom)
-// = 0.0 = near-black. Keeping these literally synced with the shader
-// avoids a "the editor lied" moment when the curve gets applied.
+// Vertical colour ramp matching what the user actually *sees* on the
+// map, not just the raw cm_warm() palette. The shader composites
+// each pixel as `col * alpha` with `alpha = result`, additively over
+// a dark base -- so the visible map colour at LUT value `t` is
+// `base + colormap(t) * t`. That `* t` is critical: it's why the
+// map's low/mid-range looks like dim darks with a hue, not the
+// saturated purples/magentas the raw c1/c2 values suggest.
+//
+// First attempt of this fill used colormap(t) un-weighted and made
+// the editor read way more vivid than the map. The stops below
+// re-bake that weighting so the editor looks like the map.
+//
+// Ordered top -> bottom = bright -> dark so the gradient aligns
+// with the curve's y semantics: y=0 (top) maps to LUT 1.0 (yellow,
+// full alpha), y=1 (bottom) to LUT 0.0 (black, zero alpha).
 const CM_WARM_GRADIENT_STOPS: { offset: string; color: string }[] = [
-  { offset: '0%',   color: 'rgb(252, 213, 72)'  }, // c4 yellow
-  { offset: '25%',  color: 'rgb(227, 74, 51)'   }, // c3 orange-red
-  { offset: '50%',  color: 'rgb(145, 11, 128)'  }, // c2 magenta
-  { offset: '75%',  color: 'rgb(48, 11, 102)'   }, // c1 deep purple
-  { offset: '100%', color: 'rgb(1, 0, 5)'       }, // c0 near-black
+  // colormap(1.00) * 1.00 = c4 at full intensity
+  { offset: '0%',   color: 'rgb(252, 213, 72)' },
+  // colormap(0.75) * 0.75  ≈ c3 * 0.75
+  { offset: '25%',  color: 'rgb(170, 55, 38)'  },
+  // colormap(0.50) * 0.50  ≈ c2 * 0.50
+  { offset: '50%',  color: 'rgb(73, 5, 64)'    },
+  // colormap(0.25) * 0.25  ≈ c1 * 0.25
+  { offset: '75%',  color: 'rgb(12, 3, 26)'    },
+  // colormap(0.00) * 0.00 = pure black
+  { offset: '100%', color: 'rgb(0, 0, 0)'      },
 ];
 
 const CM_WARM_GRADIENT_ID = 'curveAreaWarmGradient';
@@ -466,7 +480,11 @@ export function CurveEditor({
           <path
             d={areaPath}
             fill={`url(#${CM_WARM_GRADIENT_ID})`}
-            opacity={0.55}
+            // 0.75 reads close to the map's perceived intensity once
+            // the stops are alpha-weighted; the bright yellow at the
+            // top still pops, and the now-dark lower stops blend
+            // into the panel background instead of looking purple.
+            opacity={0.75}
             pointerEvents="none"
           />
         )}

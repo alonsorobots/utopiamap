@@ -41,7 +41,9 @@ export function CollabBar({ enabled, status, peers, roomId, onEnd, onJumpToPeer 
       <div className="collab-avatars">
         {peers.slice(0, 6).map((p) => {
           const canJump = !!p.view && !!onJumpToPeer;
-          const title = `${p.name}${p.axis ? ` -- ${p.axis}` : ''}${canJump ? ' (click to jump to their view)' : ''}`;
+          const title = canJump
+            ? `${p.name}${p.axis ? ` -- ${p.axis}` : ''} (click to jump to their view)`
+            : `${p.name}${p.axis ? ` -- ${p.axis}` : ''} (move their map first to enable jump)`;
           return (
             <button
               key={p.userId}
@@ -54,6 +56,7 @@ export function CollabBar({ enabled, status, peers, roomId, onEnd, onJumpToPeer 
               aria-label={title}
             >
               {initials(p.name)}
+              {canJump && <span className="collab-avatar-jump-icon" aria-hidden="true">↗</span>}
             </button>
           );
         })}

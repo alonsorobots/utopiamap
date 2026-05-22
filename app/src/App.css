@@ -1622,6 +1622,7 @@
 }
 .collab-avatar-jumpable {
   cursor: pointer;
+  position: relative;
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 .collab-avatar-jumpable:hover {
@@ -1630,6 +1631,26 @@
 }
 .collab-avatar-jumpable:focus-visible {
   box-shadow: 0 0 0 2px #ffd66b;
+}
+/* Small "jump-to" indicator pinned to the avatar's top-right so it's
+   obvious the chip is clickable. Hidden on non-jumpable chips (peer
+   has not yet published a camera) so the affordance only appears when
+   the action actually does something. */
+.collab-avatar-jump-icon {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ffd66b;
+  color: #1a1d22;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 11px;
+  text-align: center;
+  border: 1px solid rgba(20, 20, 26, 0.95);
+  pointer-events: none;
 }
 
 /* Cursor overlay sits above the map but below the top bar so the

@@ -2153,7 +2153,7 @@ export default function App() {
         if (!cameraChangedEnough(view)) return;
         lastPublishedCameraRef.current = view;
         collab.publishCamera(view);
-      }, 2000);
+      }, 700);
     };
     map.on('moveend', onMapChange);
     map.on('zoomend', onMapChange);

@@ -2088,46 +2088,42 @@
 .intro-grid-tilt {
   position: relative;
   transform-style: preserve-3d;
-  /* Subtle bird's-eye: 35° tilt keeps front cubes nearly head-on
+  /* Subtle bird's-eye: 32° tilt keeps front cubes nearly head-on
    * while still revealing top faces clearly; combined with the
    * above-centre perspective-origin, this gives a clean three-point
    * recession on the back rows. No Z-rotation -- the camera is
    * dead-centre on the grid, which the user explicitly asked for. */
-  transform: rotateX(35deg);
-  /* The X-tilt shifts the visual centre downward (because the far
-   * edge swings up toward screen-top); pull the grid up to keep
-   * the whole composition centred in the viewport. */
-  margin-top: -60px;
+  transform: rotateX(32deg);
+  margin-top: -40px;
 }
 
 .intro-pin {
   position: absolute;
-  width: 36px;
-  height: 36px;
+  width: 18px;
+  height: 18px;
   transform-style: preserve-3d;
-  --lift: 0;        /* unitless 0..MAX_LIFT (≈24) */
-  --hue: #5a3a56;
+  --lift: 0;        /* unitless 0..MAX_LIFT (≈14) */
+  --hue: #3e2840;
 }
 
-/* Top face: lifted via translateZ. No specular highlight any more --
- * the previous radial-gradient at 30% 25% read as a "weird circle"
- * on every flat pin (the user reported this), and a true 3D look
- * doesn't need a fake highlight when the sides do the lighting work.
- * Edge AO is a stronger 2-layer inset shadow now: a crisp 1px dark
- * border for the seam, plus a softer 4px inset shadow that visibly
- * darkens the corners where adjacent pins meet, producing the
- * "valley between pins is darker" cue the user asked for. */
+/* Top face: lifted via translateZ. No specular highlight -- a true
+ * 3D look doesn't need a fake highlight when the sides do the
+ * lighting work, and the previous radial-gradient version read as
+ * a "weird circle" on every flat pin. Edge AO is a 2-layer inset
+ * shadow: a crisp 1px dark border for the seam plus a softer 3px
+ * inset shadow that visibly darkens the corners where adjacent pins
+ * meet, producing the "valley between pins is darker" effect. */
 .intro-pin-top {
   position: absolute;
   inset: 0;
-  width: 36px;
-  height: 36px;
+  width: 18px;
+  height: 18px;
   background: var(--hue);
-  border-radius: 2px;
+  border-radius: 1.5px;
   transform: translateZ(calc(var(--lift) * 1px));
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.45),
-    inset 0 0 6px rgba(0, 0, 0, 0.35);
+    inset 0 0 3px rgba(0, 0, 0, 0.32);
   will-change: transform, background;
 }
 
@@ -2172,9 +2168,9 @@
  * facing the camera; as a bonus this also reverses the gradient
  * so the darker end correctly lands at the base of the wall. */
 .intro-pin-side-front {
-  width: 36px;
+  width: 18px;
   height: calc(var(--lift) * 1px);
-  top: 36px;
+  top: 18px;
   left: 0;
   transform-origin: 50% 0% 0;
   transform: rotateZ(180deg) rotateX(90deg);
@@ -2188,9 +2184,9 @@
  * the light. */
 .intro-pin-side-right {
   width: calc(var(--lift) * 1px);
-  height: 36px;
+  height: 18px;
   top: 0;
-  left: 36px;
+  left: 18px;
   transform-origin: 0% 50% 0;
   transform: rotateZ(180deg) rotateY(-90deg);
   filter: brightness(0.82);
@@ -2203,7 +2199,7 @@
  * for free. */
 .intro-pin-shadow {
   position: absolute;
-  inset: -14px;
+  inset: -8px;
   background: radial-gradient(46% 42% at 50% 64%,
     rgba(0, 0, 0, 0.85) 0%,
     rgba(0, 0, 0, 0) 78%);
@@ -2211,30 +2207,42 @@
   /* Unitless --lift makes this calc return a plain number, which
    * opacity actually accepts -- the previous px-valued version
    * silently failed and left a faint shadow visible under every
-   * pin even at lift=0. MAX_LIFT in IntroDataGrid is 24, so the
-   * shadow reaches full strength right at the wave peak. */
-  opacity: calc(var(--lift) / 24);
+   * pin even at lift=0. MAX_LIFT in IntroDataGrid is 14, so the
+   * shadow reaches full strength at the peak. */
+  opacity: calc(var(--lift) / 14);
   pointer-events: none;
 }
 
 .intro-grid-caption {
   position: absolute;
-  bottom: 14vh;
+  bottom: 10vh;
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
-  width: min(720px, 90vw);
+  width: min(820px, 92vw);
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
 }
 
 .intro-grid-caption-line {
-  font-size: clamp(22px, 3vw, 36px);
-  font-weight: 300;
-  color: rgba(255, 255, 255, 0.88);
-  letter-spacing: 0.005em;
   margin: 0;
-  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.005em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
   animation: introCaptionIn 0.55s ease forwards;
+}
+
+.intro-grid-caption-primary {
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 300;
+}
+
+.intro-grid-caption-secondary {
+  font-size: clamp(18px, 2.4vw, 26px);
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .intro-grid-caption-hl {
@@ -2242,23 +2250,26 @@
   letter-spacing: 0.005em;
 }
 
-.intro-grid-caption-hl-gradient {
-  /* Per-letter gradient fill: orange → blue across the word,
-   * communicating the literal "two things combining" idea. */
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-
-@media (max-width: 720px) {
-  /* Scale the whole tilted plane down to fit narrow viewports
-   * without rebuilding the grid -- preserves all the lift/occlusion
-   * math, just shrinks the rendered size. */
+/* Responsive scaling: the grid is naturally ~878px wide, which
+ * runs the edges off most laptop viewports without help. We scale
+ * the tilted plane down at narrower viewports rather than rebuilding
+ * the grid -- preserves all the lift/occlusion math, just shrinks
+ * the rendered size. */
+@media (max-width: 1100px) {
   .intro-grid-tilt {
-    transform: scale(0.7) rotateX(58deg) rotateZ(-12deg);
+    transform: scale(0.86) rotateX(32deg);
   }
-  .intro-grid-caption { bottom: 10vh; }
+}
+@media (max-width: 820px) {
+  .intro-grid-tilt {
+    transform: scale(0.62) rotateX(32deg);
+  }
+  .intro-grid-caption { bottom: 6vh; }
+}
+@media (max-width: 520px) {
+  .intro-grid-tilt {
+    transform: scale(0.45) rotateX(32deg);
+  }
 }
 
 .intro-cta {

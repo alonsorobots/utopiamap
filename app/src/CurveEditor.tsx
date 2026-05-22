@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo, useId } from 'react';
 
 export interface CurvePoint {
   x: number;
@@ -184,37 +184,86 @@ function buildAreaPath(points: CurvePoint[], svgW: number, svgH: number): string
   return d;
 }
 
-// Vertical colour ramp tuned to match what the user actually *sees*
-// on the rendered map -- which is NOT just cm_warm() applied to t.
-// The map composites each pixel as `col * alpha` additively over
-// MapTiler's dark-style basemap, with `alpha = result`. So the
-// perceived colour at LUT value `t` is roughly:
-//   base + colormap(t) * t
-// where base ≈ rgb(25, 28, 38) (MapTiler dark). Three passes got us
-// here:
-//   v1: encoded raw cm_warm() stops -- editor read way too vivid
-//       (purple/magenta where the map shows near-black-with-hue).
-//   v2: applied `* t` weighting -- closer, but the lower half went
-//       fully black and the bright top got washed out at opacity
-//       0.75, so the editor still looked "less alive" than the map.
-//   v3 (this): also add the basemap tint AND render at opacity 1.0,
-//       so the dim low-LUT regions read as dim blue-grey (matching
-//       the actual basemap showing through on the map) and the
-//       bright top doesn't get diluted by the panel background.
-const CM_WARM_GRADIENT_STOPS: { offset: string; color: string }[] = [
-  // colormap(1.00) * 1.00 + base, clamped
-  { offset: '0%',   color: 'rgb(255, 241, 110)' },
-  // colormap(0.75) * 0.75 + base
-  { offset: '25%',  color: 'rgb(195, 83, 76)'   },
-  // colormap(0.50) * 0.50 + base
-  { offset: '50%',  color: 'rgb(98, 33, 102)'   },
-  // colormap(0.25) * 0.25 + base
-  { offset: '75%',  color: 'rgb(37, 31, 64)'    },
-  // base only (pure no-data shows the basemap colour)
-  { offset: '100%', color: 'rgb(25, 28, 38)'    },
-];
+// Per-pixel colour the map will paint for a given LUT value `t`,
+// keeping the shader's `base + colormap(t) * t` math literally in
+// sync with cm_warm()'s c0..c4 stops in heatmapLayer.ts. `base` is
+// an eyeballed MapTiler dark-style colour -- the map's "no data"
+// region reads as this through the heatmap.
+const BASEMAP_TINT = { r: 25 / 255, g: 28 / 255, b: 38 / 255 };
+const CM_WARM_C0 = [0.002, 0.001, 0.020];
+const CM_WARM_C1 = [0.190, 0.045, 0.400];
+const CM_WARM_C2 = [0.570, 0.043, 0.503];
+const CM_WARM_C3 = [0.890, 0.290, 0.200];
+const CM_WARM_C4 = [0.988, 0.835, 0.282];
 
-const CM_WARM_GRADIENT_ID = 'curveAreaWarmGradient';
+function cmWarmAt(t: number): [number, number, number] {
+  const ct = Math.max(0, Math.min(1, t));
+  let lo: number[], hi: number[], lerpT: number;
+  if (ct < 0.25)      { lo = CM_WARM_C0; hi = CM_WARM_C1; lerpT = ct * 4; }
+  else if (ct < 0.5)  { lo = CM_WARM_C1; hi = CM_WARM_C2; lerpT = (ct - 0.25) * 4; }
+  else if (ct < 0.75) { lo = CM_WARM_C2; hi = CM_WARM_C3; lerpT = (ct - 0.5) * 4; }
+  else                { lo = CM_WARM_C3; hi = CM_WARM_C4; lerpT = (ct - 0.75) * 4; }
+  return [
+    lo[0] + lerpT * (hi[0] - lo[0]),
+    lo[1] + lerpT * (hi[1] - lo[1]),
+    lo[2] + lerpT * (hi[2] - lo[2]),
+  ];
+}
+
+function paintedColor(lut: number): string {
+  const t = Math.max(0, Math.min(1, lut));
+  const [cr, cg, cb] = cmWarmAt(t);
+  const r = Math.min(1, BASEMAP_TINT.r + cr * t);
+  const g = Math.min(1, BASEMAP_TINT.g + cg * t);
+  const b = Math.min(1, BASEMAP_TINT.b + cb * t);
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+}
+
+// Linear interpolation of the curve at an arbitrary x. Treats the
+// curve as flat outside the first/last control point (matching the
+// "tail" rendering in the SVG so the gradient and the visible
+// region of the chart line up).
+function curveYAt(points: CurvePoint[], x: number): number {
+  if (points.length === 0) return 0.5;
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  if (x <= sorted[0].x) return sorted[0].y;
+  if (x >= sorted[sorted.length - 1].x) return sorted[sorted.length - 1].y;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (x >= sorted[i].x && x <= sorted[i + 1].x) {
+      const t = (x - sorted[i].x) / (sorted[i + 1].x - sorted[i].x);
+      return sorted[i].y + t * (sorted[i + 1].y - sorted[i].y);
+    }
+  }
+  return sorted[sorted.length - 1].y;
+}
+
+// Stops for the HORIZONTAL gradient that fills the area under the
+// curve. At each x position the colour is what the map will literally
+// paint for that data value -- so the editor doubles as a "preview
+// strip" of the rendered map across the axis's full data range.
+//
+// Three earlier vertical-gradient attempts (raw cm_warm; cm_warm*t;
+// cm_warm*t + base) all painted "the full palette as a legend" which
+// is informative but doesn't match what the user sees on the map:
+// the map at any pixel only shows ONE colour -- the colour for THAT
+// pixel's data value passed through THIS axis's curve. A horizontal
+// gradient sampled from the curve nails that exactly.
+//
+// Samples include every control point (so kinks land precisely
+// where the user dragged them) plus a regular oversampling so smooth
+// segments don't visibly piecewise-linear-interpolate in colour.
+function buildHorizontalGradientStops(points: CurvePoint[]): { offset: string; color: string }[] {
+  if (points.length === 0) return [];
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  const sampleXs = new Set<number>();
+  for (let i = 0; i <= 32; i++) sampleXs.add(i / 32);
+  for (const p of sorted) sampleXs.add(Math.max(0, Math.min(1, p.x)));
+  const xs = Array.from(sampleXs).sort((a, b) => a - b);
+  return xs.map((x) => {
+    const lut = 1 - curveYAt(sorted, x); // mirrors the inversion in evaluateCurvePoints
+    return { offset: `${(x * 100).toFixed(3)}%`, color: paintedColor(lut) };
+  });
+}
 
 const BOTTOM_ROW_H = 20;
 const SUBTITLE_H = 14;
@@ -433,6 +482,12 @@ export function CurveEditor({
 
   const curvePath = useMemo(() => buildPath(displayPoints, svgW, svgH), [displayPoints, svgW, svgH]);
   const areaPath = useMemo(() => buildAreaPath(displayPoints, svgW, svgH), [displayPoints, svgW, svgH]);
+  const areaGradStops = useMemo(() => buildHorizontalGradientStops(displayPoints), [displayPoints]);
+  // useId is per-mount-stable; needed because the gradient stops are
+  // curve-dependent so two simultaneously-mounted editors would
+  // otherwise stomp on each other's <defs> under a shared id.
+  const reactId = useId();
+  const areaGradId = `curveAreaGradient-${reactId.replace(/[:]/g, '')}`;
 
   const firstPt = displayPoints[0];
   const lastPt = displayPoints[displayPoints.length - 1];
@@ -461,32 +516,26 @@ export function CurveEditor({
         onDoubleClick={onSvgDoubleClick}
         style={{ touchAction: 'none', display: 'block' }}
       >
-        {/* Heatmap-palette gradient used to fill the area under the
-             curve. Defined once per editor; safe to share an id
-             across multiple mounted editors because every editor
-             paints the same warm ramp. */}
+        {/* Horizontal heatmap-painted gradient under the curve. The
+             colour at each x is the exact pixel colour the map would
+             render for that data value through this axis's curve
+             (basemap + cm_warm(LUT) * LUT), so the editor doubles as
+             a "preview strip" of the map across the axis's full
+             data range. Sampled at every control point + a regular
+             oversampling for smooth segments. Gradient id is
+             per-mount because the stops are curve-dependent. */}
         <defs>
-          <linearGradient id={CM_WARM_GRADIENT_ID} x1="0%" y1="0%" x2="0%" y2="100%">
-            {CM_WARM_GRADIENT_STOPS.map((s) => (
-              <stop key={s.offset} offset={s.offset} stopColor={s.color} />
+          <linearGradient id={areaGradId} x1="0%" y1="0%" x2="100%" y2="0%">
+            {areaGradStops.map((s, i) => (
+              <stop key={i} offset={s.offset} stopColor={s.color} />
             ))}
           </linearGradient>
         </defs>
 
-        {/* Area under the curve, painted with the heatmap palette so
-             users see the literal colors their curve is sculpting.
-             Rendered before grid lines / curve stroke so the curve
-             and handles still read on top. Opacity tuned so the grid
-             stays subtly visible (helps with reading values). */}
         {areaPath && (
           <path
             d={areaPath}
-            fill={`url(#${CM_WARM_GRADIENT_ID})`}
-            // Full opacity now that the stops already encode the
-            // basemap tint via "+base" and the alpha weighting via
-            // "* t". Diluting with the panel background would just
-            // re-introduce the muted-yellow problem that opacity
-            // 0.75 was hiding.
+            fill={`url(#${areaGradId})`}
             opacity={1.0}
             pointerEvents="none"
           />

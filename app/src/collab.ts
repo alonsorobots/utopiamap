@@ -142,6 +142,16 @@ export class Collab {
   private pendingDocCategory: string | null = null;
   private pendingAwarenessCategory: string | null = null;
 
+  // Empty-room throttle. When `peerCount === 0` nobody is listening,
+  // so awareness heartbeats (~4 msg/min from the y-protocols
+  // setInterval) and local doc edits are pure waste -- every send
+  // still costs one Workers request even though it goes to /dev/null.
+  // We bypass the throttle for sends that originated *from* an
+  // incoming message (sync.step2 replies, late-joiner greet) and for
+  // the once-per-connection open handshake, so a fresh peer can still
+  // discover us and pull our current state on demand.
+  private allowSendDespiteAlone = false;
+
   constructor(roomBaseUrl: string, roomId: string, opts: { joining: boolean } = { joining: false }) {
     this.doc = new Y.Doc();
     this.state = this.doc.getMap('view');
@@ -332,21 +342,28 @@ export class Collab {
       telemetry.recordEvent('socket.open');
       this.setStatus({ state: 'connected', peerCount: this.status.peerCount, error: null });
 
-      // Initial sync handshake: send our current state vector so peers
-      // know what they need to send us. They'll respond with a SyncStep2.
-      const sync1 = encoding.createEncoder();
-      encoding.writeVarUint(sync1, MSG_SYNC);
-      syncProtocol.writeSyncStep1(sync1, this.doc);
-      this.send(encoding.toUint8Array(sync1), 'sync.step1');
+      // The two-message open handshake (sync.step1 + aware.greet) is
+      // the *only* way another peer learns we exist, so we always send
+      // it -- even when the room is empty as far as we can tell.
+      // Anyone already in the room receives our greet and responds; if
+      // nobody's there, the relay drops the bytes after a single hop.
+      this.allowSendDespiteAlone = true;
+      try {
+        const sync1 = encoding.createEncoder();
+        encoding.writeVarUint(sync1, MSG_SYNC);
+        syncProtocol.writeSyncStep1(sync1, this.doc);
+        this.send(encoding.toUint8Array(sync1), 'sync.step1');
 
-      // Push our local awareness so existing peers see us immediately.
-      const aw = encoding.createEncoder();
-      encoding.writeVarUint(aw, MSG_AWARENESS);
-      encoding.writeVarUint8Array(
-        aw,
-        awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID]),
-      );
-      this.send(encoding.toUint8Array(aw), 'aware.greet');
+        const aw = encoding.createEncoder();
+        encoding.writeVarUint(aw, MSG_AWARENESS);
+        encoding.writeVarUint8Array(
+          aw,
+          awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID]),
+        );
+        this.send(encoding.toUint8Array(aw), 'aware.greet');
+      } finally {
+        this.allowSendDespiteAlone = false;
+      }
     });
 
     ws.addEventListener('message', (ev) => {
@@ -388,25 +405,34 @@ export class Collab {
   }
 
   private send(payload: Uint8Array, category: string) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      // Cast away the SharedArrayBuffer-vs-ArrayBuffer type widening that
-      // TS 5.7+ inflicts on Uint8Array. WebSocket.send accepts any view.
-      // Copy into a fresh ArrayBuffer so the type is unambiguous (the lib0
-      // encoders return Uint8Array<ArrayBufferLike> which TS 5.7 widens to
-      // include SharedArrayBuffer, which WebSocket.send rejects at compile
-      // time even though it works at runtime).
-      const buf = new Uint8Array(payload.byteLength);
-      buf.set(payload);
-      try {
-        this.ws.send(buf.buffer);
-        telemetry.recordOut(category, undefined, buf.byteLength);
-      } catch {}
-    } else {
+    if (!(this.ws && this.ws.readyState === WebSocket.OPEN)) {
       // Drop on the floor while reconnecting; surface to the debug
       // panel so a "phantom" send (e.g. a UI handler firing while
       // we're disconnected) is visible instead of silently lost.
       telemetry.recordEvent('send.dropped', category);
+      return;
     }
+    // Empty-room throttle. peerCount==0 + not in the explicit bypass
+    // window (open handshake / handleIncoming reply / republish) means
+    // the bytes have nowhere to go. The y-protocols awareness
+    // heartbeat fires every ~15s by default, so this saves ~4 wasted
+    // Workers requests/minute per idle tab.
+    if (this.status.peerCount === 0 && !this.allowSendDespiteAlone) {
+      telemetry.recordEvent('send.skipped.alone', category);
+      return;
+    }
+    // Cast away the SharedArrayBuffer-vs-ArrayBuffer type widening that
+    // TS 5.7+ inflicts on Uint8Array. WebSocket.send accepts any view.
+    // Copy into a fresh ArrayBuffer so the type is unambiguous (the lib0
+    // encoders return Uint8Array<ArrayBufferLike> which TS 5.7 widens to
+    // include SharedArrayBuffer, which WebSocket.send rejects at compile
+    // time even though it works at runtime).
+    const buf = new Uint8Array(payload.byteLength);
+    buf.set(payload);
+    try {
+      this.ws.send(buf.buffer);
+      telemetry.recordOut(category, undefined, buf.byteLength);
+    } catch {}
   }
 
   private scheduleReconnect() {
@@ -417,6 +443,20 @@ export class Collab {
   }
 
   private handleIncoming(buf: Uint8Array) {
+    // Any send fired from inside this method is a *reply* to a peer
+    // message -- there's by definition someone listening (the peer who
+    // just spoke to us), even if our fanOutCursors hasn't run yet to
+    // bump peerCount above zero. Allow those sends through the
+    // empty-room throttle.
+    this.allowSendDespiteAlone = true;
+    try {
+      this.handleIncomingInner(buf);
+    } finally {
+      this.allowSendDespiteAlone = false;
+    }
+  }
+
+  private handleIncomingInner(buf: Uint8Array) {
     const decoder = decoding.createDecoder(buf);
     const messageType = decoding.readVarUint(decoder);
     if (messageType === MSG_SYNC) {

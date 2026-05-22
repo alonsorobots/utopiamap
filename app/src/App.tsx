@@ -1731,8 +1731,26 @@ export default function App() {
       mapRef.current?.triggerRepaint();
     },
     onYear: (y, s) => {
-      setTimeYear(y, s);
-      timePanelRef.current?.jumpToYear(y);
+      // Clamp incoming year to one that has data for *our* current
+      // axis. The peer's local snap fired against their own axis, but
+      // race conditions (peer scrubs year before their onAxis arrives
+      // here, or we and the peer momentarily disagree on which axis
+      // is active) can land us on year=2024 while we're on `pop`
+      // (data only up to 2015). snapYearToAxis below would catch
+      // that but only on the next axis change -- snap now so the
+      // tile fetch in the next frame already has the right year.
+      const years = getAllAxisYears(activeAxisRef.current);
+      let snapped = y;
+      if (years.length > 0 && !years.includes(y)) {
+        snapped = years[0];
+        let bestDist = Math.abs(snapped - y);
+        for (const candidate of years) {
+          const d = Math.abs(candidate - y);
+          if (d < bestDist) { snapped = candidate; bestDist = d; }
+        }
+      }
+      setTimeYear(snapped, s);
+      timePanelRef.current?.jumpToYear(snapped);
     },
     onCurves: (curves) => {
       // A peer tuned one or more curves. Adopt the new control points
@@ -1945,14 +1963,15 @@ export default function App() {
   //      year (e.g. localStorage from a session that hit bug #1 before the
   //      fix existed). Same blank-tile failure mode.
   // snapYearToAxis is a no-op when the current year is already valid for
-  // the axis, so it's safe to run unconditionally for non-share sessions.
+  // the axis, so it's safe to run unconditionally -- including for
+  // share-link sessions whose catalog landed *after* the share-load
+  // effect had a chance to apply (axis, year) from the URL.
   useEffect(() => {
     if (!mapLoaded || !catalogReady) return;
-    if (HAS_SHARE_HASH) return;
     if (!getCatalog()) return;
     snapYearToAxis(activeAxis);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLoaded, catalogReady]);
+  }, [mapLoaded, catalogReady, activeAxis]);
 
   // Apply state decoded from a #view= permalink once both the gzip decode
   // and the map have finished initialising. We do this imperatively rather
@@ -1973,9 +1992,10 @@ export default function App() {
       if (shared.units && typeof shared.units === 'object') {
         unitStatesRef.current = { ...unitStatesRef.current, ...shared.units };
       }
-      if (typeof shared.activeAxis === 'string') {
-        setActiveAxis(shared.activeAxis);
-        setHeatmapActiveAxis(shared.activeAxis);
+      const sharedAxis = typeof shared.activeAxis === 'string' ? shared.activeAxis : null;
+      if (sharedAxis) {
+        setActiveAxis(sharedAxis);
+        setHeatmapActiveAxis(sharedAxis);
       }
       if (typeof shared.formula === 'string') {
         setFormula(shared.formula);
@@ -1984,6 +2004,17 @@ export default function App() {
       }
       if (typeof shared.year === 'number' && Number.isFinite(shared.year)) {
         setTimeYear(shared.year, 'historical');
+        timePanelRef.current?.jumpToYear(shared.year);
+      }
+      // After we've applied both axis and year, force them back into a
+      // consistent state. The sender may have shared year=2024 on `pop`
+      // (whose catalog stops at 2015) -- snap to the nearest data year
+      // so the recipient never opens to a blank "no data" map. Guarded
+      // by catalogReady so getAllAxisYears actually returns the year
+      // list; if the catalog hasn't loaded yet the snap useEffect
+      // below will pick it up once it does.
+      if (sharedAxis && catalogReady) {
+        snapYearToAxis(sharedAxis);
       }
       if (map && Array.isArray(shared.mapCenter) && shared.mapCenter.length === 2 && typeof shared.mapZoom === 'number') {
         map.jumpTo({ center: shared.mapCenter, zoom: shared.mapZoom });
@@ -1995,7 +2026,7 @@ export default function App() {
       mapRef.current?.triggerRepaint();
     });
     return () => { cancelled = true; };
-  }, [isShareView, mapLoaded]);
+  }, [isShareView, mapLoaded, catalogReady, snapYearToAxis]);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerSave = useCallback(() => {

@@ -140,30 +140,45 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
     chosenAxes.map((id) => AXIS_CHIPS.find((c) => c.id === id)).filter((c): c is AxisChip => c != null),
   [chosenAxes]);
 
+  // Renders a close affordance pinned to the active card. The "close
+  // button still in the wrong place" feedback was about it sitting at
+  // screen top-center -- visually disconnected from where the user's
+  // eye is. We put one inside every card's top-right corner so it
+  // travels with the content. Styled high-contrast (white pill on
+  // dark card) for instant readability.
+  const renderClose = () => (
+    <button
+      className={`intro-close${skipVisible ? ' visible' : ''}`}
+      onClick={onSkip}
+      aria-label="Close intro (Esc, or click outside)"
+      title="Close intro (Esc, or click outside)"
+    >
+      <span className="intro-close-glyph">×</span>
+      <span className="intro-close-label">Close</span>
+    </button>
+  );
+
+  // Backdrop click = same as Escape. Stops propagation on cards so
+  // clicks INSIDE the card don't bubble out and dismiss. User
+  // feedback: "give them another out if they don't want to be there".
+  const onBackdropClick = onSkip;
+  const stopBubble = (e: React.MouseEvent) => e.stopPropagation();
+
   return (
     <div className={`intro-overlay${fading ? ' intro-fade-out' : ''}`}>
-      {/* Backdrop wash -- low alpha so the live map remains visible
-           behind every stage of the intro. */}
-      <div className="intro-backdrop" />
-
-      {/* Skip / replay control. Hidden for the first few seconds
-           of the cinematic to give the opening shot some breathing
-           room (see SKIP_REVEAL_DELAY_MS). */}
-      <button
-        className={`intro-skip${skipVisible ? ' visible' : ''}`}
-        onClick={onSkip}
-        aria-label="Skip intro (Escape)"
-        title="Skip intro (Escape)"
-      >
-        ×
-      </button>
+      {/* Backdrop is now a real click target: clicking anywhere
+           outside the card dismisses the intro. */}
+      <div className="intro-backdrop" onClick={onBackdropClick} />
 
       {stage === 'cinematic' && (
-        <IntroDataGrid onComplete={advanceCinematic} />
+        <div className="intro-card intro-card-cinematic" onClick={stopBubble}>
+          <IntroDataGrid onComplete={advanceCinematic} />
+          {renderClose()}
+        </div>
       )}
 
       {stage === 'pick-axes' && (
-        <div className="intro-panel intro-pick-axes">
+        <div className="intro-card intro-card-picker" onClick={stopBubble}>
           <h2 className="intro-h">What matters most where you'd want to live / visit?</h2>
           <p className="intro-sub">Pick two.</p>
           <div className="intro-chip-grid">
@@ -192,13 +207,14 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
               {chosenAxes.length === 0 ? 'Pick at least one' : 'Continue →'}
             </button>
           </div>
+          {renderClose()}
         </div>
       )}
 
       {stage === 'pick-presets' && chosenChips[pickPresetForIdx] && (() => {
         const chip = chosenChips[pickPresetForIdx];
         return (
-          <div className="intro-panel intro-pick-presets">
+          <div className="intro-card intro-card-picker" onClick={stopBubble}>
             <div className="intro-step-counter">
               {pickPresetForIdx + 1} of {chosenChips.length}
             </div>
@@ -216,12 +232,13 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
                 </button>
               ))}
             </div>
+            {renderClose()}
           </div>
         );
       })()}
 
       {stage === 'reveal' && (
-        <div className="intro-panel intro-reveal">
+        <div className="intro-card intro-card-picker" onClick={stopBubble}>
           <div className="intro-reveal-eyebrow">Here's your map.</div>
           <h2 className="intro-h intro-reveal-sentence">
             {composeRevealSentence(chosenChips)}
@@ -235,6 +252,7 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
           <p className="intro-sub intro-reveal-hint">
             Tap any feature in the menu to keep refining.
           </p>
+          {renderClose()}
         </div>
       )}
     </div>

@@ -1965,10 +1965,8 @@
   z-index: 9000;
   pointer-events: auto;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 24px 12vh;
+  justify-content: center;
   transition: opacity 0.4s ease;
 }
 
@@ -1977,54 +1975,109 @@
   pointer-events: none;
 }
 
+/* Backdrop is the click-to-dismiss layer. It fills the viewport
+ * and intercepts clicks anywhere outside the card. A subtle
+ * blur+dim wash visually telegraphs "the rest of the app is paused
+ * while this modal is up". Cursor: pointer so the affordance is
+ * discoverable on hover. */
 .intro-backdrop {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   background: radial-gradient(
     ellipse at center,
-    rgba(8, 10, 18, 0.20) 0%,
-    rgba(8, 10, 18, 0.55) 50%,
-    rgba(5, 6, 12, 0.85) 100%
+    rgba(8, 10, 18, 0.55) 0%,
+    rgba(5, 6, 12, 0.78) 60%,
+    rgba(3, 4, 8, 0.92) 100%
   );
-  z-index: -1;
+  backdrop-filter: blur(10px);
 }
 
-/* Skip / close control. Lives ABOVE the data-grid stage (z-index)
- * so it stays visible during the cinematic -- the previous version
- * was hidden behind the grid's full-viewport black backdrop, which
- * is the "skip button not visible at all" bug the user reported. */
-.intro-skip {
+/* Card chrome shared by every intro stage. Sits above the
+ * backdrop, has a visible border + drop shadow so it reads as a
+ * proper window, and stops click-propagation so users can interact
+ * with controls inside without dismissing. */
+.intro-card {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(40, 32, 50, 0.55) 0%, rgba(12, 12, 18, 0) 70%),
+    linear-gradient(180deg, #16131d 0%, #0e0c14 100%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  pointer-events: auto;
+  cursor: default;
+  overflow: hidden;
+  animation: introCardIn 0.5s ease forwards;
+}
+
+.intro-card-cinematic {
+  width: min(1120px, 94vw);
+  height: min(720px, 88vh);
+}
+
+.intro-card-picker {
+  width: min(760px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 36px 32px 28px;
+}
+
+@keyframes introCardIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* Close button: white pill, top-right of the card. Per user
+ * feedback ("closer to the action and more visible"), the previous
+ * top-center floating icon was too disconnected from the content;
+ * pinning it to the card corner keeps it eye-track-adjacent and
+ * the high-contrast white-on-dark styling makes it impossible to
+ * miss. The label expands on hover for an explicit confirmation
+ * of what the button does. */
+.intro-close {
   position: absolute;
-  top: 5vh;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 44px;
-  height: 44px;
+  top: 14px;
+  right: 14px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  line-height: 1;
-  font-weight: 300;
-  background: rgba(20, 22, 30, 0.80);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 50%;
-  color: #fff;
+  gap: 6px;
+  padding: 8px 14px 8px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #15131c;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.4s ease, background 0.15s, border-color 0.15s, transform 0.15s;
-  backdrop-filter: blur(8px);
-  z-index: 100;
+  transition: opacity 0.3s ease, background 0.15s, transform 0.12s, box-shadow 0.15s;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  z-index: 200;
   pointer-events: auto;
 }
-
-.intro-skip.visible { opacity: 0.92; }
-.intro-skip:hover {
-  opacity: 1;
-  background: rgba(40, 44, 56, 0.95);
-  border-color: rgba(255, 255, 255, 0.45);
-  transform: translateX(-50%) scale(1.06);
+.intro-close.visible { opacity: 1; }
+.intro-close:hover {
+  background: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+}
+.intro-close-glyph {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 300;
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+}
+.intro-close-label {
+  font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .intro-caption {
@@ -2066,6 +2119,9 @@
  * --lift and --hue, so this stylesheet defines geometry + lighting
  * but no @keyframes -- the RAF loop owns the motion.
  */
+/* The stage now lives INSIDE the .intro-card window (no longer
+ * full-viewport). The card supplies the visible frame + shadow +
+ * background; the stage just hosts the 3D scene. */
 .intro-grid-stage {
   position: absolute;
   inset: 0;
@@ -2073,32 +2129,27 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Stronger perspective + camera positioned above-centre, so the
-   * front rows read closer to head-on (less foreshortening) and
-   * the back rows recede with a visible three-point taper. */
-  perspective: 950px;
-  perspective-origin: 50% 25%;
+  perspective: 1100px;
+  perspective-origin: 50% 28%;
   overflow: hidden;
-  background:
-    radial-gradient(ellipse at center, rgba(20, 22, 32, 0.0) 0%, rgba(8, 9, 14, 0.85) 75%),
-    #07080d;
-  /* The grid itself stays pointer-transparent (decorative), but
-   * the ‹ / › buttons inside it opt back in via their own
-   * pointer-events: auto. */
   pointer-events: none;
 }
 
 .intro-grid-tilt {
   position: relative;
   transform-style: preserve-3d;
-  /* Subtle bird's-eye: 30° tilt keeps front cubes nearly head-on
-   * while still revealing top faces clearly. The previous 32° was
-   * too steep for the new MAX_LIFT (42px) -- taller cubes need
-   * less rake or they over-foreshorten. */
-  transform: rotateX(30deg);
-  /* Nudge the grid downward so the caption (now at top) has room,
-   * and the cubes have a sky to grow into when lifted. */
-  margin-top: 40px;
+  /* 28° tilt: less rake than before because the cubes now lift up
+   * to 75px -- taller cubes need a flatter angle so the peaks
+   * don't run off the top of the card and so the camera reads as
+   * subtle bird's-eye rather than dramatic 3/4. */
+  transform: rotateX(28deg);
+  margin-top: 36px;
+  opacity: 0;
+  /* JS sets opacity per-frame so the world fades in AFTER the
+   * caption appears on scene 0; on subsequent scenes the JS sets
+   * opacity:1. Default of 0 here means the world is invisible on
+   * mount until the RAF loop runs its first tick. */
+  transition: none;
 }
 
 .intro-pin {
@@ -2211,29 +2262,28 @@
   /* Unitless --lift makes this calc return a plain number, which
    * opacity actually accepts -- the previous px-valued version
    * silently failed and left a faint shadow visible under every
-   * pin even at lift=0. MAX_LIFT in IntroDataGrid is 42 now, so we
-   * divide by 42 for a full-strength shadow at the peak. */
-  opacity: calc(var(--lift) / 42);
+   * pin even at lift=0. MAX_LIFT in IntroDataGrid is 75 now, so we
+   * divide by 75 for a full-strength shadow at the peak. */
+  opacity: calc(var(--lift) / 75);
   pointer-events: none;
 }
 
-/* Captions live ABOVE the grid (user feedback: "Make the text
- * above not below"). Sized so multi-line copy doesn't reflow the
- * grid: min-height reserves vertical space for ~2 lines even when
- * a single line is showing. */
+/* Captions live ABOVE the grid, inside the card. Pinned in pixel
+ * units (not vh) because the stage is now card-sized, not
+ * viewport-sized, so vh would be wildly inconsistent. */
 .intro-grid-caption {
   position: absolute;
-  top: 10vh;
+  top: 56px;
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
-  width: min(880px, 92vw);
-  min-height: 5em;
+  width: min(860px, 88%);
+  min-height: 4.5em;
   pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5em;
+  gap: 0.55em;
   z-index: 10;
 }
 
@@ -2241,15 +2291,17 @@
  * feedback that subcaptions reading as smaller text felt like a
  * downgrade. The visual hierarchy comes from the bold orange
  * highlight inside each line, not from a separate "secondary"
- * style. */
+ * style. Letter-spacing is mildly negative (cleaner display
+ * typography), and line-height generous so multi-line captions
+ * breathe. */
 .intro-grid-caption-line {
   margin: 0;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: clamp(22px, 2.9vw, 32px);
+  color: rgba(245, 240, 250, 0.96);
+  font-size: clamp(22px, 2.7vw, 30px);
   font-weight: 300;
-  letter-spacing: 0.005em;
-  line-height: 1.35;
-  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+  letter-spacing: -0.005em;
+  line-height: 1.4;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
   animation: introCaptionIn 0.55s ease forwards;
 }
 
@@ -2259,51 +2311,57 @@
 }
 
 /* Self-paced navigation arrows (‹ / ›). Always rendered so the
- * affordance is discoverable as soon as the grid loads; the prev
- * arrow on scene 0 is `disabled` and renders at low opacity so
- * users immediately understand the boundary. */
+ * affordance is discoverable as soon as the grid loads; prev on
+ * scene 0 is `disabled` at low opacity so users immediately
+ * understand the boundary. Restyled: subtle white-translucent
+ * pill, gently glowing on hover -- intentionally not loud so the
+ * cinematic stays the visual subject. */
 .intro-grid-nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1;
-  font-weight: 300;
-  background: rgba(20, 22, 30, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 200;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
-  color: #fff;
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   opacity: 0;
-  animation: introNavFadeIn 0.6s 0.45s ease forwards;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s, opacity 0.2s;
-  backdrop-filter: blur(8px);
+  animation: introNavFadeIn 0.55s 0.4s ease forwards;
+  transition: background 0.18s ease, border-color 0.18s ease,
+              transform 0.15s ease, color 0.15s ease, opacity 0.2s ease,
+              box-shadow 0.2s ease;
+  backdrop-filter: blur(6px);
   z-index: 50;
   pointer-events: auto;
   user-select: none;
   padding: 0 0 3px 0; /* nudge glyph optical center */
 }
 .intro-grid-nav:hover {
-  background: rgba(40, 44, 56, 0.95);
-  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+  box-shadow: 0 4px 18px rgba(198, 156, 66, 0.18);
   opacity: 1;
 }
 .intro-grid-nav:disabled {
-  opacity: 0.18;
+  opacity: 0.14;
   cursor: not-allowed;
   pointer-events: none;
 }
-.intro-grid-nav-prev { left: max(24px, 3vw); }
-.intro-grid-nav-next { right: max(24px, 3vw); }
+.intro-grid-nav-prev { left: 18px; }
+.intro-grid-nav-next { right: 18px; }
 
 @keyframes introNavFadeIn {
-  from { opacity: 0; transform: translateY(-50%) translateX(0); }
-  to   { opacity: 0.72; transform: translateY(-50%) translateX(0); }
+  from { opacity: 0; transform: translateY(-50%); }
+  to   { opacity: 0.72; transform: translateY(-50%); }
 }
 
 /* Scene progress dots: a quiet, always-on indicator of how far
@@ -2312,7 +2370,7 @@
  * to navigate -- the arrows are the navigation. */
 .intro-grid-progress {
   position: absolute;
-  bottom: 4vh;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -2343,23 +2401,24 @@
  * occlusion math, just shrinks the rendered size. */
 @media (max-width: 1100px) {
   .intro-grid-tilt {
-    transform: scale(0.84) rotateX(30deg);
+    transform: scale(0.82) rotateX(28deg);
   }
 }
 @media (max-width: 820px) {
   .intro-grid-tilt {
-    transform: scale(0.6) rotateX(30deg);
+    transform: scale(0.58) rotateX(28deg);
     margin-top: 20px;
   }
-  .intro-grid-caption { top: 6vh; }
+  .intro-grid-caption { top: 30px; }
   .intro-grid-nav { width: 40px; height: 40px; font-size: 24px; }
+  .intro-card-cinematic { width: 96vw; height: 90vh; }
 }
 @media (max-width: 520px) {
   .intro-grid-tilt {
-    transform: scale(0.42) rotateX(30deg);
+    transform: scale(0.4) rotateX(28deg);
     margin-top: 10px;
   }
-  .intro-grid-caption { top: 4vh; }
+  .intro-grid-caption { top: 20px; }
   .intro-grid-nav-prev { left: 8px; }
   .intro-grid-nav-next { right: 8px; }
 }
@@ -2384,19 +2443,9 @@
 .intro-cta:hover:not(:disabled) { transform: translateY(-1px); background: rgba(96, 165, 250, 1); }
 .intro-cta:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Stage panels (pick-axes, pick-presets, reveal) share a centred
- * container that sits above the caption baseline. The map remains
- * fully visible behind. */
-.intro-panel {
-  width: min(720px, 92vw);
-  background: rgba(14, 16, 24, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 28px 24px 22px;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-  animation: introCaptionIn 0.45s ease forwards;
-}
+/* Picker stages (pick-axes, pick-presets, reveal) now reuse the
+ * shared .intro-card-picker chrome above. Typography rules below
+ * are unchanged. */
 
 .intro-h {
   margin: 0 0 6px;

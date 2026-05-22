@@ -61,14 +61,26 @@ const ROWS = 18;     // bumped from 16 so northern continents (Russia,
                      // resolution to read as distinct landmasses.
 const CELL = 18;     // px per pin
 const GAP = 2;
-const MAX_LIFT = 42; // peak pin height (px). User wanted 3× the
-                     // previous 14 so elevation reads as a real
-                     // mountain range, not a gentle bump.
+const MAX_LIFT = 75; // peak pin height (px). Bumped again from 42 --
+                     // user feedback: "height of the altitude is
+                     // still not high enough". At 75px on 18px cells
+                     // the tallest peaks tower over 4× their base
+                     // width, so mountains read unmistakably.
 
-const COLOR_FLAT = '#3e2840';     // dim plum (the "no data" baseline)
-const COLOR_WARM = '#c69c42';     // amber-gold for hot temperature & "warm AND high" survivors
+// Palette. COLOR_FLAT is the baseline for "no data" cells -- it's
+// intentionally DARKER and MORE MUTED than the previous #3e2840
+// (which read as overly saturated plum and made the world look
+// "cheaper than the rest of the app", per user feedback). COLOR_COLD
+// is brand-new: it's the brightest cool stop the temperature ramp
+// settles to in polar regions, so that AFTER the temperature layer
+// is applied, even cold cells are visibly coloured (not blending
+// into the flat baseline) -- this fixes the "VERY dark squares ...
+// pretty much not visible" bug in the temperature scene.
+const COLOR_FLAT = '#2c2630';     // darker, more muted "no data" baseline
+const COLOR_COLD = '#4a4458';     // cool blue-grey: brightest "cold-data" stop
 const COLOR_PLUM = '#5a3a56';     // mid plum -- intermediate temperature stop
-const COLOR_RUST = '#a75b4d';     // warm rust -- intermediate temperature stop (also matches curve editor mid)
+const COLOR_RUST = '#a75b4d';     // warm rust -- intermediate temperature stop (matches curve editor)
+const COLOR_WARM = '#c69c42';     // amber-gold for hot temperature & "warm AND high" survivors
 
 // Latitude range we render. Cropping at ±75° kills the Antarctic
 // blob (which adds nothing for our story) and keeps the visible
@@ -229,12 +241,26 @@ function lerpColor(a: string, b: string, t: number): string {
 
 // Temperature → colour: 4-stop ramp through the same palette family
 // as the live curve editor, so the abstract intro reads in the same
-// visual language as the real product.
+// visual language as the real product. The cold end now goes to
+// COLOR_COLD (not COLOR_FLAT), so polar cells are visibly coloured
+// once the temperature layer is applied, not indistinguishable
+// from the "no data" baseline.
 function tempColor(temp: number): string {
   const t = clamp01(temp);
-  if (t < 0.35) return lerpColor(COLOR_FLAT, COLOR_PLUM, t / 0.35);
+  if (t < 0.35) return lerpColor(COLOR_COLD, COLOR_PLUM, t / 0.35);
   if (t < 0.65) return lerpColor(COLOR_PLUM, COLOR_RUST, (t - 0.35) / 0.30);
   return lerpColor(COLOR_RUST, COLOR_WARM, (t - 0.65) / 0.35);
+}
+
+// easeOutBack: standard cubic easing with a slight overshoot at the
+// end (peak emerges, briefly overshoots, then settles). Used for the
+// elevation rise so mountains "pop" rather than glide -- the user
+// wanted a more dramatic, mountain-emerging-from-the-ground feel.
+function easeOutBack(t: number): number {
+  const c = clamp01(t);
+  const k1 = 1.18;
+  const k3 = k1 + 1;
+  return 1 + k3 * Math.pow(c - 1, 3) + k1 * Math.pow(c - 1, 2);
 }
 
 // ─── per-scene cell-state functions ────────────────────────────────
@@ -325,10 +351,14 @@ function tempPrefState(t: number, c: CellInfo): PinState {
 //                   don't move). This resets the colour channel so
 //                   the elevation rise reads as "new layer, not a
 //                   tweak of the old".
-//   2300 -> 4200ms: cubes rise to their elevation heights (eased).
-//                   With the new MAX_LIFT (42px) this is a real
-//                   mountain range, not a gentle bump.
-//   4200 -> end   : hold so user can read the mountain ridges.
+//   2300+         : peaks-first staggered rise with overshoot.
+//                   Tallest cells (Andes, Himalayas) rise FIRST with
+//                   no delay; lower foothills rise progressively
+//                   later. Each cell uses easeOutBack so it briefly
+//                   overshoots its target, giving a "peaks erupting"
+//                   feel rather than a smooth glide. The user
+//                   feedback was that the lift was unclear -- this
+//                   makes the rise unmistakable and dramatic.
 function elevState(t: number, c: CellInfo): PinState {
   let color = c.warm ? c.tempColor : COLOR_FLAT;
   if (t >= 1500 && c.warm) {
@@ -339,7 +369,13 @@ function elevState(t: number, c: CellInfo): PinState {
   }
   let lift = 0;
   if (t >= 2300) {
-    lift = c.elevation * MAX_LIFT * easeOut(clamp01((t - 2300) / 1900));
+    // Peaks first, foothills later: high elevation → 0 delay,
+    // low elevation → up to 900ms delay.
+    const stagger = (1 - c.elevation) * 900;
+    const riseLocal = t - 2300 - stagger;
+    if (riseLocal > 0) {
+      lift = c.elevation * MAX_LIFT * easeOutBack(riseLocal / 1400);
+    }
   }
   return { lift, color };
 }
@@ -436,7 +472,10 @@ const SCENES: SceneSpec[] = [
     id: 'temp',
     durationMs: 5400,
     captions: [
-      { appearAtMs: 200, text: 'Each layer of **data** colours the world — here, temperature.' },
+      // Reworded: the previous "...colours the world — here,
+      // temperature" tripped on the "here, temperature" fragment.
+      // This reads as a single, natural sentence.
+      { appearAtMs: 200, text: 'It shows you data — like **temperature**.' },
     ],
   },
   {
@@ -448,7 +487,10 @@ const SCENES: SceneSpec[] = [
   },
   {
     id: 'elev',
-    durationMs: 5800,
+    // 6800ms gives the peaks-first staggered rise (up to ~4400ms
+    // from start of rise window at t=2300) a ~600ms hold tail
+    // before the next scene takes over.
+    durationMs: 6800,
     captions: [
       { appearAtMs: 200, text: 'Add another layer — **elevation** lifts the mountains.' },
     ],
@@ -484,6 +526,7 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
   const sceneTRef = useRef(0);
   const [captionsVisible, setCaptionsVisible] = useState<number>(0);
   const pinRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const tiltRef = useRef<HTMLDivElement | null>(null);
   const completedRef = useRef(false);
 
   // startTimeRef is a ref (not a const captured in useEffect) so
@@ -613,6 +656,21 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
       }
 
       const sceneId = scene.id;
+
+      // World-fade-in: per user feedback "text needs to start the
+      // show". On the opening story scene the world map cubes hold
+      // at opacity 0 until ~1.3s in (caption is already on screen
+      // and has been read), then fade up over ~900ms. All other
+      // scenes keep the world fully visible. Re-running this every
+      // visit to scene 0 (e.g. user pressed ‹ back to start) is
+      // intentional -- the fade is a brief and consistent cue.
+      if (tiltRef.current) {
+        const worldOpacity = sceneId === 'story'
+          ? clamp01((t - 1300) / 900)
+          : 1;
+        tiltRef.current.style.opacity = worldOpacity.toFixed(3);
+      }
+
       for (let i = 0; i < cells.length; i++) {
         const c = cells[i];
         const s = pinStateAt(sceneId, t, c);
@@ -651,6 +709,7 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
       </div>
 
       <div
+        ref={tiltRef}
         className="intro-grid-tilt"
         style={{ width: gridW, height: gridH }}
       >

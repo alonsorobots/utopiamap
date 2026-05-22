@@ -3,26 +3,39 @@
 // movements -- "data → preferences → combine" -- using temperature
 // (cube colour) and elevation (cube height) as the two layers.
 //
-// Story spine: "find warm places to climb"
-//   0. story        story setup ("warm places to climb")
-//   1. temp         show layer 1: temperature gradient on the map
-//   2. temp-pref    apply the "warm" preference: cool cells fade
-//   3. elev         introduce layer 2: cubes rise to elevation
-//                   (colours fade back to flat first so the elevation
-//                   reads as a fresh layer, not a mod of the colours)
-//   4. elev-pref    apply the "high" preference: low cubes drop
-//   5. combine      AND the two filters: only warm + high survives
-//                   (e.g. Andes, Ethiopian Highlands, Himalayas tail)
+// Story spine: "find warm places with mountains to hike"
+//   0. story        big-picture intro: "find places that match what
+//                   matters to you"
+//   1. goal         the concrete example we'll work through ("warm
+//                   mountains to hike") -- separate card so the user
+//                   isn't asked to read two ideas in one beat
+//   2. temp         layer 1 = temperature, sweep-in via ripples from
+//                   the equator (so the appearance of the gradient
+//                   reads as a process, not a snap)
+//   3. temp-pref    preference 1 = warm: cool cells fade back to plum
+//   4. elev         layer 2 = elevation: colours fade back to plum
+//                   first (so elevation reads as a fresh layer, not a
+//                   tweak of the colours) then cubes rise
+//   5. elev-pref    preference 2 = high: low cubes drop
+//   6. combine      AND the two filters: only warm + high survives
+//                   (Andes, Ethiopian Highlands, Himalayan foothills)
 //
 // Pacing principle (user explicitly requested): text comes in FIRST,
 // then a beat to read, THEN animation. Never simultaneous. Every
 // scene's animation start is offset by a readable amount so the eye
 // always has one job at a time.
 //
+// Self-paced navigation: ‹ / › buttons (and ArrowLeft/ArrowRight)
+// jump between scene boundaries. Auto-advance still runs in the
+// background, so a passive viewer sees the whole show without
+// touching anything, but anyone who wants to slow down or rewind
+// can. We shift startTimeRef rather than pausing RAF so the
+// per-frame state pipeline stays uniform across modes.
+//
 // Implementation notes:
 //   - The world map is procedural: a handful of lat/lon bounding
 //     regions with optional taper shaping (NA/SA/Africa/Eurasia all
-//     taper from wide tops to narrower bottoms). At 44×16 resolution
+//     taper from wide tops to narrower bottoms). At 44×18 resolution
 //     this gives instantly recognisable continent silhouettes while
 //     remaining trivial to tune via TypeScript edits rather than ASCII.
 //   - Only LAND cells render -- the ocean cells aren't even in the
@@ -38,16 +51,19 @@
 //     is rendered exactly once via React; the RAF loop updates --lift
 //     and --hue through refs to avoid reconciliation cost per frame.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ─── grid & palette ────────────────────────────────────────────────
 
 const COLS = 44;
-const ROWS = 16;
+const ROWS = 18;     // bumped from 16 so northern continents (Russia,
+                     // Greenland, Alaska) get enough vertical
+                     // resolution to read as distinct landmasses.
 const CELL = 18;     // px per pin
 const GAP = 2;
-const MAX_LIFT = 14; // peak pin height (px); deliberately less than
-                     // the previous 24 because cells are smaller now.
+const MAX_LIFT = 42; // peak pin height (px). User wanted 3× the
+                     // previous 14 so elevation reads as a real
+                     // mountain range, not a gentle bump.
 
 const COLOR_FLAT = '#3e2840';     // dim plum (the "no data" baseline)
 const COLOR_WARM = '#c69c42';     // amber-gold for hot temperature & "warm AND high" survivors
@@ -77,19 +93,24 @@ interface Region {
   centerLon?: number;
 }
 
+// Northern landmasses (Alaska, NA, Greenland, Russia) are explicitly
+// pushed up to latMax 75-80 so they show up in row 0 -- the user
+// reported these "seemed to be missing" because the previous extents
+// (latMax 72-76) made them only appear once or twice in the foreshortened
+// back rows.
 const REGIONS: Region[] = [
   // North America: wide at the Canadian top, narrows through Mexico
-  { name: 'na',         lonMin: -130, lonMax: -65,  latMin:  14, latMax: 73,  shape: 'taper-down', centerLon: -100 },
-  { name: 'alaska',     lonMin: -170, lonMax: -130, latMin:  55, latMax: 72 },
+  { name: 'na',         lonMin: -130, lonMax: -55,  latMin:  14, latMax: 76,  shape: 'taper-down', centerLon: -100 },
+  { name: 'alaska',     lonMin: -170, lonMax: -130, latMin:  55, latMax: 75 },
   { name: 'cAmerica',   lonMin:  -95, lonMax: -78,  latMin:   7, latMax: 18 },
-  { name: 'greenland',  lonMin:  -55, lonMax: -22,  latMin:  60, latMax: 76 },
+  { name: 'greenland',  lonMin:  -55, lonMax: -22,  latMin:  60, latMax: 80 },
 
   // South America: widest in the Amazon basin, tapers to Patagonia
   { name: 'sa',         lonMin:  -80, lonMax: -35,  latMin: -55, latMax: 12,  shape: 'taper-down', centerLon: -62 },
 
   // Europe + Scandinavia + Russia (a single chunky horizontal slab)
-  { name: 'europe',     lonMin:  -10, lonMax:  35,  latMin:  36, latMax: 70 },
-  { name: 'russia',     lonMin:   20, lonMax: 175,  latMin:  45, latMax: 73 },
+  { name: 'europe',     lonMin:  -10, lonMax:  35,  latMin:  36, latMax: 72 },
+  { name: 'russia',     lonMin:   20, lonMax: 178,  latMin:  45, latMax: 76 },
 
   // Middle East joining Europe to Asia
   { name: 'middleEast', lonMin:   32, lonMax:  60,  latMin:  12, latMax: 42 },
@@ -142,7 +163,7 @@ function temperatureAt(col: number, row: number): number {
   const lat = latAtRow(row);
   const lon = lonAtCol(col);
   // Cosine of latitude: 1.0 at equator, 0.0 at poles.
-  let t = Math.cos((lat * Math.PI) / 180);
+  const t = Math.cos((lat * Math.PI) / 180);
   // Continental-interior cooling bias breaks the perfect latitude
   // bands; just enough to add visual texture so the temp layer
   // doesn't look like a 1D gradient.
@@ -176,12 +197,15 @@ function elevationAt(col: number, row: number): number {
   return Math.min(1, h);
 }
 
-// Thresholds for the two preference filters. Tuned so the "warm
-// AND high" intersection ends up being a satisfying handful of
-// geographically-meaningful cells (Andes near equator, Ethiopian
-// Highlands, the warm tail of the Himalayas, southern Rockies).
-const WARM_THRESHOLD = 0.62;
-const HIGH_THRESHOLD = 0.30;
+// Thresholds for the two preference filters. WARM_THRESHOLD raised
+// from 0.62 → 0.80 so the "warm" filter actually filters out most
+// of the temperate world (the user's complaint was that the
+// previous threshold only chopped off the top row); now warm =
+// roughly tropics + low subtropics (lat -35..+35). HIGH_THRESHOLD
+// raised so the elevation filter eliminates the broad low ranges
+// (Outback, Drakensberg shoulders) and keeps only the real peaks.
+const WARM_THRESHOLD = 0.80;
+const HIGH_THRESHOLD = 0.42;
 
 // ─── colour helpers ────────────────────────────────────────────────
 
@@ -226,21 +250,61 @@ interface CellInfo {
 
 interface PinState { lift: number; color: string }
 
-// Story scene: everything flat plum. The visual is the silhouette
-// of the world; the text does all the storytelling.
+// Story / goal scenes: everything flat plum. The visual is the
+// silhouette of the world; the text does all the storytelling. Both
+// the "find places that match what matters to you" and the "let's
+// find warm mountains" beats use the same state so the world holds
+// still while the user reads.
 function storyState(): PinState {
   return { lift: 0, color: COLOR_FLAT };
 }
 
-// Temperature scene: hold flat plum while the caption appears and
-// the user reads it, then tween every cell from plum → its
-// temperature colour over 1.5s. The hold-after gives the eye a
-// chance to land on the equatorial band before scene 2 strips it
-// down to just "warm".
+// Temperature scene: hold flat plum while the caption reads, then
+// "heat ripple" stabilises into the temperature gradient. The
+// ripple is a sequence of expanding wavefronts from the equator --
+// each wave briefly brightens cells toward warm gold and gives
+// them a small lift, while the underlying colour tweens from plum
+// to its final temperature. After ~2.5s the ripples have dissipated
+// and every cell sits at its true tempColor. This addresses the
+// user's "it just goes black" feedback -- now the transition is a
+// process the eye can watch rather than a silent crossfade.
 function tempState(t: number, c: CellInfo): PinState {
-  if (t < 1800) return { lift: 0, color: COLOR_FLAT };
-  const progress = clamp01((t - 1800) / 1500);
-  return { lift: 0, color: lerpColor(COLOR_FLAT, c.tempColor, progress) };
+  if (t < 1500) return { lift: 0, color: COLOR_FLAT };
+
+  const sinceStart = t - 1500;
+
+  // Final colour the cell settles into.
+  const settle = easeOut(clamp01(sinceStart / 2200));
+  const settledColor = lerpColor(COLOR_FLAT, c.tempColor, settle);
+
+  // Three expanding wavefronts from the equator, each spawned 380ms
+  // apart and dampening as it propagates. We take the MAX intensity
+  // across waves so a cell flashes once per wave that passes over it.
+  const equatorRow = (ROWS - 1) / 2;
+  const distFromEquator = Math.abs(c.row - equatorRow);
+  const RIPPLE_SPEED = 0.0090; // rows / ms
+  const SIGMA = 1.3;
+
+  let intensity = 0;
+  for (let i = 0; i < 3; i++) {
+    const offset = sinceStart - i * 380;
+    if (offset < 0) break;
+    const wavePos = offset * RIPPLE_SPEED;
+    const d = distFromEquator - wavePos;
+    const radial = Math.exp(-(d * d) / (2 * SIGMA * SIGMA));
+    // Wave amplitude decays with distance + falls off entirely once
+    // the wavefront has reached past the poles.
+    const damp = Math.max(0, 1 - wavePos / (ROWS * 0.7)) * Math.max(0, 1 - i * 0.32);
+    intensity = Math.max(intensity, radial * damp);
+  }
+
+  // Brightness pulse + small lift at the wavefront, on top of the
+  // settled colour.
+  const finalColor = lerpColor(settledColor, COLOR_WARM, intensity * 0.55);
+  const lift = intensity * 5; // small (max ~5px) -- the wave is a
+                              //   ripple, not an elevation event.
+
+  return { lift, color: finalColor };
 }
 
 // Warm-preference scene: cool cells fade BACK to plum; warm cells
@@ -261,8 +325,10 @@ function tempPrefState(t: number, c: CellInfo): PinState {
 //                   don't move). This resets the colour channel so
 //                   the elevation rise reads as "new layer, not a
 //                   tweak of the old".
-//   2300 -> 4000ms: cubes rise to their elevation heights (eased).
-//   4000 -> end   : hold so user can read the mountain ridges.
+//   2300 -> 4200ms: cubes rise to their elevation heights (eased).
+//                   With the new MAX_LIFT (42px) this is a real
+//                   mountain range, not a gentle bump.
+//   4200 -> end   : hold so user can read the mountain ridges.
 function elevState(t: number, c: CellInfo): PinState {
   let color = c.warm ? c.tempColor : COLOR_FLAT;
   if (t >= 1500 && c.warm) {
@@ -273,7 +339,7 @@ function elevState(t: number, c: CellInfo): PinState {
   }
   let lift = 0;
   if (t >= 2300) {
-    lift = c.elevation * MAX_LIFT * easeOut(clamp01((t - 2300) / 1700));
+    lift = c.elevation * MAX_LIFT * easeOut(clamp01((t - 2300) / 1900));
   }
   return { lift, color };
 }
@@ -305,7 +371,6 @@ function elevPrefState(t: number, c: CellInfo): PinState {
 function combineState(t: number, c: CellInfo): PinState {
   const fullLift = c.elevation * MAX_LIFT;
   if (!c.high) return { lift: 0, color: COLOR_FLAT };
-  // From here on, c.high is true.
   if (t < 1500) return { lift: fullLift, color: COLOR_FLAT };
   const progress = easeInOut(clamp01((t - 1500) / 2000));
   if (c.warm) {
@@ -323,6 +388,7 @@ function combineState(t: number, c: CellInfo): PinState {
 function pinStateAt(sceneId: string, t: number, cell: CellInfo): PinState {
   switch (sceneId) {
     case 'story':     return storyState();
+    case 'goal':      return storyState();
     case 'temp':      return tempState(t, cell);
     case 'temp-pref': return tempPrefState(t, cell);
     case 'elev':      return elevState(t, cell);
@@ -345,50 +411,61 @@ interface SceneSpec {
 // Caption text uses **highlight** for the orange-accented words.
 // Pacing principle: every caption appears at least ~200ms after the
 // scene begins (so the eye registers the transition); animations are
-// scheduled later still so the user can read first, then watch.
+// scheduled later still so the user can read first, then watch. All
+// caption lines are full sentences -- the previous "Your preference
+// — warm." style read as fragments, per user feedback.
 const SCENES: SceneSpec[] = [
+  // Big-picture intro. Just the world silhouette, no animation.
   {
     id: 'story',
-    durationMs: 5200,
+    durationMs: 4200,
     captions: [
-      { appearAtMs: 300,  text: 'Utopiamap helps you find places that match what matters to you.' },
-      { appearAtMs: 2600, text: "Let's find **warm places to climb**." },
+      { appearAtMs: 200, text: 'Utopiamap helps you find places that match what matters to you.' },
+    ],
+  },
+  // Concrete example we'll work through. Its own card so the user
+  // isn't asked to absorb two ideas in a single beat.
+  {
+    id: 'goal',
+    durationMs: 3400,
+    captions: [
+      { appearAtMs: 200, text: "Let's find **warm places with mountains** to hike." },
     ],
   },
   {
     id: 'temp',
-    durationMs: 4800,
+    durationMs: 5400,
     captions: [
-      { appearAtMs: 200, text: 'It shows you layers of **data** — like temperature.' },
+      { appearAtMs: 200, text: 'Each layer of **data** colours the world — here, temperature.' },
     ],
   },
   {
     id: 'temp-pref',
-    durationMs: 3400,
+    durationMs: 3800,
     captions: [
-      { appearAtMs: 200, text: 'Your **preference** — warm.' },
+      { appearAtMs: 200, text: 'Tell it your **preference**, and it keeps the warm places.' },
     ],
   },
   {
     id: 'elev',
-    durationMs: 5400,
+    durationMs: 5800,
     captions: [
-      { appearAtMs: 200, text: 'Now another layer — **elevation**.' },
+      { appearAtMs: 200, text: 'Add another layer — **elevation** lifts the mountains.' },
     ],
   },
   {
     id: 'elev-pref',
-    durationMs: 3400,
+    durationMs: 3800,
     captions: [
-      { appearAtMs: 200, text: 'Your **preference** — high.' },
+      { appearAtMs: 200, text: 'Tell it your **preference**, and it keeps the high places.' },
     ],
   },
   {
     id: 'combine',
     durationMs: 6800,
     captions: [
-      { appearAtMs: 200,  text: '**Combine** preferences.' },
-      { appearAtMs: 4600, text: 'Warm. High. **Found.**' },
+      { appearAtMs: 200,  text: '**Combine** preferences, and only the places that match both remain.' },
+      { appearAtMs: 4500, text: 'Warm mountains, **found**.' },
     ],
   },
 ];
@@ -408,6 +485,12 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
   const [captionsVisible, setCaptionsVisible] = useState<number>(0);
   const pinRefs = useRef<(HTMLDivElement | null)[]>([]);
   const completedRef = useRef(false);
+
+  // startTimeRef is a ref (not a const captured in useEffect) so
+  // the manual ‹/› buttons can rewind/advance the clock by writing
+  // a new origin -- the RAF loop reads the current value every
+  // tick and re-derives scene + scene-local-t from it.
+  const startTimeRef = useRef<number>(performance.now());
 
   // Pre-compute per-cell info ONCE: lat/lon-derived values that
   // never change across scenes. Only land cells are included; ocean
@@ -437,10 +520,49 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  // Manual navigation: jump the clock to the start of a scene. We
+  // shift startTimeRef rather than tracking scene-local time
+  // separately, so the RAF pipeline stays uniform whether playback
+  // is auto-advancing or user-driven.
+  const goToScene = useCallback((newIdx: number) => {
+    if (newIdx < 0) return;
+    if (newIdx >= SCENES.length) {
+      // "Next" on the last scene = finish the cinematic and let
+      // the parent advance to pick-axes.
+      if (!completedRef.current) {
+        completedRef.current = true;
+        onCompleteRef.current();
+      }
+      return;
+    }
+    let accum = 0;
+    for (let i = 0; i < newIdx; i++) accum += SCENES[i].durationMs;
+    startTimeRef.current = performance.now() - accum;
+    setSceneIdx(newIdx);
+    setCaptionsVisible(0);
+  }, []);
+
+  // Keyboard nav. Use capture so we beat the app's own arrow-key
+  // handlers (axis cycling) while the intro is mounted.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        goToScene(sceneIdx - 1);
+      } else if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        goToScene(sceneIdx + 1);
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [sceneIdx, goToScene]);
+
   useEffect(() => {
     let raf = 0;
     let cancelled = false;
-    const startTime = performance.now();
     const durations = SCENES.map((s) => s.durationMs);
     const total = durations.reduce((a, b) => a + b, 0);
     let lastSceneIdx = -1;
@@ -448,7 +570,7 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
 
     const tick = () => {
       if (cancelled) return;
-      const elapsed = performance.now() - startTime;
+      const elapsed = performance.now() - startTimeRef.current;
       if (elapsed >= total) {
         if (!completedRef.current) {
           completedRef.current = true;
@@ -517,6 +639,17 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
 
   return (
     <div className="intro-grid-stage">
+      <div className="intro-grid-caption">
+        {visibleCaptions.map((c, i) => (
+          <p
+            key={`${sceneIdx}-${i}`}
+            className="intro-grid-caption-line"
+          >
+            {renderCaption(c.text)}
+          </p>
+        ))}
+      </div>
+
       <div
         className="intro-grid-tilt"
         style={{ width: gridW, height: gridH }}
@@ -540,14 +673,32 @@ export function IntroDataGrid({ onComplete }: IntroDataGridProps) {
         ))}
       </div>
 
-      <div className="intro-grid-caption">
-        {visibleCaptions.map((c, i) => (
-          <p
-            key={`${sceneIdx}-${i}`}
-            className={`intro-grid-caption-line intro-grid-caption-${i === 0 ? 'primary' : 'secondary'}`}
-          >
-            {renderCaption(c.text)}
-          </p>
+      {/* Self-paced navigation. Always rendered (so the user can
+          rewind at any point) but prev is disabled on scene 0. */}
+      <button
+        className="intro-grid-nav intro-grid-nav-prev"
+        onClick={() => goToScene(sceneIdx - 1)}
+        disabled={sceneIdx === 0}
+        aria-label="Previous (←)"
+        title="Previous (←)"
+      >
+        ‹
+      </button>
+      <button
+        className="intro-grid-nav intro-grid-nav-next"
+        onClick={() => goToScene(sceneIdx + 1)}
+        aria-label="Next (→)"
+        title="Next (→)"
+      >
+        ›
+      </button>
+
+      <div className="intro-grid-progress">
+        {SCENES.map((_, i) => (
+          <span
+            key={i}
+            className={`intro-grid-progress-dot${i === sceneIdx ? ' active' : ''}${i < sceneIdx ? ' past' : ''}`}
+          />
         ))}
       </div>
     </div>

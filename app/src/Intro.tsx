@@ -164,7 +164,7 @@ export function Intro({ api, onFinish, onCommit }: IntroProps) {
 
       {stage === 'pick-axes' && (
         <div className="intro-panel intro-pick-axes">
-          <h2 className="intro-h">What matters most where you'd want to live?</h2>
+          <h2 className="intro-h">What matters most where you'd want to live / visit?</h2>
           <p className="intro-sub">Pick two.</p>
           <div className="intro-chip-grid">
             {AXIS_CHIPS.map((chip) => {

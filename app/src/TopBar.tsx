@@ -318,7 +318,7 @@ function ShareModal({ onClose, onBuildReadonlyLink, onBuildCollabLink, collabEna
         <div className="share-privacy">
           {error
             ? `Error: ${error}`
-            : 'No accounts, no tracking. Read-only links carry the whole session inside the URL -- nothing reaches our servers. Collaboration links route through a tiny relay that forwards changes between connected browsers in real time and stores nothing -- when everyone closes the tab the room evaporates from memory.'}
+            : 'Fast and private. No accounts. No tracking.'}
         </div>
       </div>
     </div>

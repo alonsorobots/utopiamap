@@ -430,6 +430,24 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
     onFormulaCommit?.(newFormula);
   }, [formula, formulaIdentSet, formulaTokenFor, allOptionsById, onFormulaChange, onFormulaCommit]);
 
+  // Hover-preview: matches the formula bar's behaviour where hovering
+  // a token solos that axis on the map without committing any change.
+  // Reuses `onFormulaSelectionChange` so the parent restores the real
+  // formula on leave. Tracked here so we can also clear the preview
+  // when the menu closes (otherwise leaving via an outside click
+  // strands the map on a soloed axis).
+  const hoveredAxisRef = useRef<string | null>(null);
+  const startAxisPreview = useCallback((a: AxisOption) => {
+    hoveredAxisRef.current = a.id;
+    onFormulaSelectionChange?.(a.id);
+  }, [onFormulaSelectionChange]);
+  const endAxisPreview = useCallback(() => {
+    if (hoveredAxisRef.current == null) return;
+    hoveredAxisRef.current = null;
+    onFormulaSelectionChange?.(null);
+  }, [onFormulaSelectionChange]);
+  useEffect(() => { if (!menuOpen) endAxisPreview(); }, [menuOpen, endAxisPreview]);
+
   return (
     <>
       <div className="top-bar">
@@ -450,9 +468,17 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
                 <div
                   key={a.id}
                   className={`axis-menu-item${a.id === activeAxisId ? ' active' : ''}${isInFormula ? ' in-formula' : ''}`}
-                  onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                  onClick={() => {
+                    endAxisPreview();
+                    onAxisChange(a.id);
+                    setMenuOpen(false);
+                    setOpenSubMenu(null);
+                  }}
+                  onMouseEnter={() => startAxisPreview(a)}
+                  onMouseLeave={endAxisPreview}
                   role="button"
                   tabIndex={0}
+                  title={`Hover: preview "${a.label}". Click: tune in graph editor.`}
                 >
                   <span>{a.label}</span>
                   <span className="axis-menu-right">
@@ -500,9 +526,17 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
                     key={a.id}
                     ref={idx === 0 ? firstSubRef : undefined}
                     className={`axis-menu-item axis-menu-subitem${a.id === activeAxisId ? ' active' : ''}${isInFormula ? ' in-formula' : ''}`}
-                    onClick={() => { onAxisChange(a.id); setMenuOpen(false); setOpenSubMenu(null); }}
+                    onClick={() => {
+                      endAxisPreview();
+                      onAxisChange(a.id);
+                      setMenuOpen(false);
+                      setOpenSubMenu(null);
+                    }}
+                    onMouseEnter={() => startAxisPreview(a)}
+                    onMouseLeave={endAxisPreview}
                     role="button"
                     tabIndex={0}
+                    title={`Hover: preview "${a.label}". Click: tune in graph editor.`}
                   >
                     <span>{a.label}</span>
                     <span className="axis-menu-right">

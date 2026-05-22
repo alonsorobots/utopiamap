@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo, useId } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 
 export interface CurvePoint {
   x: number;
@@ -184,86 +184,25 @@ function buildAreaPath(points: CurvePoint[], svgW: number, svgH: number): string
   return d;
 }
 
-// Per-pixel colour the map will paint for a given LUT value `t`,
-// keeping the shader's `base + colormap(t) * t` math literally in
-// sync with cm_warm()'s c0..c4 stops in heatmapLayer.ts. `base` is
-// an eyeballed MapTiler dark-style colour -- the map's "no data"
-// region reads as this through the heatmap.
-const BASEMAP_TINT = { r: 25 / 255, g: 28 / 255, b: 38 / 255 };
-const CM_WARM_C0 = [0.002, 0.001, 0.020];
-const CM_WARM_C1 = [0.190, 0.045, 0.400];
-const CM_WARM_C2 = [0.570, 0.043, 0.503];
-const CM_WARM_C3 = [0.890, 0.290, 0.200];
-const CM_WARM_C4 = [0.988, 0.835, 0.282];
+// Vertical fill stops, hand-picked to read like what the user
+// actually sees on the rendered map. Earlier auto-derived gradients
+// (raw cm_warm; cm_warm * t; cm_warm * t + basemap tint; and a
+// horizontal version sampled from the curve) all over-saturated
+// or over-darkened compared to the muted, slightly-translucent feel
+// of the live heatmap composite. These four stops, written
+// bottom -> top (baseline to peak), match what the eye reads:
+//   - fully transparent at the baseline (basemap shows through),
+//   - dusty plum in the lower mid,
+//   - warm rust in the upper mid,
+//   - amber-gold at the peak (where the curve actually is).
+const AREA_FILL_STOPS: { offset: string; color: string; opacity: number }[] = [
+  { offset: '0%',   color: '#5a3a56', opacity: 0.0  },
+  { offset: '33%',  color: '#5a3a56', opacity: 0.85 },
+  { offset: '66%',  color: '#a75b4d', opacity: 0.95 },
+  { offset: '100%', color: '#c69c42', opacity: 0.75 },
+];
 
-function cmWarmAt(t: number): [number, number, number] {
-  const ct = Math.max(0, Math.min(1, t));
-  let lo: number[], hi: number[], lerpT: number;
-  if (ct < 0.25)      { lo = CM_WARM_C0; hi = CM_WARM_C1; lerpT = ct * 4; }
-  else if (ct < 0.5)  { lo = CM_WARM_C1; hi = CM_WARM_C2; lerpT = (ct - 0.25) * 4; }
-  else if (ct < 0.75) { lo = CM_WARM_C2; hi = CM_WARM_C3; lerpT = (ct - 0.5) * 4; }
-  else                { lo = CM_WARM_C3; hi = CM_WARM_C4; lerpT = (ct - 0.75) * 4; }
-  return [
-    lo[0] + lerpT * (hi[0] - lo[0]),
-    lo[1] + lerpT * (hi[1] - lo[1]),
-    lo[2] + lerpT * (hi[2] - lo[2]),
-  ];
-}
-
-function paintedColor(lut: number): string {
-  const t = Math.max(0, Math.min(1, lut));
-  const [cr, cg, cb] = cmWarmAt(t);
-  const r = Math.min(1, BASEMAP_TINT.r + cr * t);
-  const g = Math.min(1, BASEMAP_TINT.g + cg * t);
-  const b = Math.min(1, BASEMAP_TINT.b + cb * t);
-  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
-}
-
-// Linear interpolation of the curve at an arbitrary x. Treats the
-// curve as flat outside the first/last control point (matching the
-// "tail" rendering in the SVG so the gradient and the visible
-// region of the chart line up).
-function curveYAt(points: CurvePoint[], x: number): number {
-  if (points.length === 0) return 0.5;
-  const sorted = [...points].sort((a, b) => a.x - b.x);
-  if (x <= sorted[0].x) return sorted[0].y;
-  if (x >= sorted[sorted.length - 1].x) return sorted[sorted.length - 1].y;
-  for (let i = 0; i < sorted.length - 1; i++) {
-    if (x >= sorted[i].x && x <= sorted[i + 1].x) {
-      const t = (x - sorted[i].x) / (sorted[i + 1].x - sorted[i].x);
-      return sorted[i].y + t * (sorted[i + 1].y - sorted[i].y);
-    }
-  }
-  return sorted[sorted.length - 1].y;
-}
-
-// Stops for the HORIZONTAL gradient that fills the area under the
-// curve. At each x position the colour is what the map will literally
-// paint for that data value -- so the editor doubles as a "preview
-// strip" of the rendered map across the axis's full data range.
-//
-// Three earlier vertical-gradient attempts (raw cm_warm; cm_warm*t;
-// cm_warm*t + base) all painted "the full palette as a legend" which
-// is informative but doesn't match what the user sees on the map:
-// the map at any pixel only shows ONE colour -- the colour for THAT
-// pixel's data value passed through THIS axis's curve. A horizontal
-// gradient sampled from the curve nails that exactly.
-//
-// Samples include every control point (so kinks land precisely
-// where the user dragged them) plus a regular oversampling so smooth
-// segments don't visibly piecewise-linear-interpolate in colour.
-function buildHorizontalGradientStops(points: CurvePoint[]): { offset: string; color: string }[] {
-  if (points.length === 0) return [];
-  const sorted = [...points].sort((a, b) => a.x - b.x);
-  const sampleXs = new Set<number>();
-  for (let i = 0; i <= 32; i++) sampleXs.add(i / 32);
-  for (const p of sorted) sampleXs.add(Math.max(0, Math.min(1, p.x)));
-  const xs = Array.from(sampleXs).sort((a, b) => a - b);
-  return xs.map((x) => {
-    const lut = 1 - curveYAt(sorted, x); // mirrors the inversion in evaluateCurvePoints
-    return { offset: `${(x * 100).toFixed(3)}%`, color: paintedColor(lut) };
-  });
-}
+const AREA_FILL_GRAD_ID = 'curveAreaFillGradient';
 
 const BOTTOM_ROW_H = 20;
 const SUBTITLE_H = 14;
@@ -482,12 +421,6 @@ export function CurveEditor({
 
   const curvePath = useMemo(() => buildPath(displayPoints, svgW, svgH), [displayPoints, svgW, svgH]);
   const areaPath = useMemo(() => buildAreaPath(displayPoints, svgW, svgH), [displayPoints, svgW, svgH]);
-  const areaGradStops = useMemo(() => buildHorizontalGradientStops(displayPoints), [displayPoints]);
-  // useId is per-mount-stable; needed because the gradient stops are
-  // curve-dependent so two simultaneously-mounted editors would
-  // otherwise stomp on each other's <defs> under a shared id.
-  const reactId = useId();
-  const areaGradId = `curveAreaGradient-${reactId.replace(/[:]/g, '')}`;
 
   const firstPt = displayPoints[0];
   const lastPt = displayPoints[displayPoints.length - 1];
@@ -516,18 +449,27 @@ export function CurveEditor({
         onDoubleClick={onSvgDoubleClick}
         style={{ touchAction: 'none', display: 'block' }}
       >
-        {/* Horizontal heatmap-painted gradient under the curve. The
-             colour at each x is the exact pixel colour the map would
-             render for that data value through this axis's curve
-             (basemap + cm_warm(LUT) * LUT), so the editor doubles as
-             a "preview strip" of the map across the axis's full
-             data range. Sampled at every control point + a regular
-             oversampling for smooth segments. Gradient id is
-             per-mount because the stops are curve-dependent. */}
+        {/* Vertical fill under the curve. Stops are written
+             bottom -> top using gradientUnits=userSpaceOnUse pinned
+             to the chart area, so the fill always spans the full
+             chart height regardless of how the area path's bounding
+             box happens to shrink for low/flat curves. */}
         <defs>
-          <linearGradient id={areaGradId} x1="0%" y1="0%" x2="100%" y2="0%">
-            {areaGradStops.map((s, i) => (
-              <stop key={i} offset={s.offset} stopColor={s.color} />
+          <linearGradient
+            id={AREA_FILL_GRAD_ID}
+            gradientUnits="userSpaceOnUse"
+            x1={PAD_L}
+            y1={PAD + svgH}
+            x2={PAD_L}
+            y2={PAD}
+          >
+            {AREA_FILL_STOPS.map((s) => (
+              <stop
+                key={s.offset}
+                offset={s.offset}
+                stopColor={s.color}
+                stopOpacity={s.opacity}
+              />
             ))}
           </linearGradient>
         </defs>
@@ -535,8 +477,7 @@ export function CurveEditor({
         {areaPath && (
           <path
             d={areaPath}
-            fill={`url(#${areaGradId})`}
-            opacity={1.0}
+            fill={`url(#${AREA_FILL_GRAD_ID})`}
             pointerEvents="none"
           />
         )}

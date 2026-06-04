@@ -403,19 +403,24 @@ const AXES: Record<string, AxisConfig> = {
     sourceUrl: 'https://www.climatologylab.org/terraclimate.html',
     hoverLabel: 'Precip.',
     // Inverted-U / plateau rather than a plain ramp: deserts score
-    // low, the temperate-to-green band (~700-1400 mm) is the peak,
+    // low, the temperate-to-green band (~900-1400 mm) is the peak,
     // and extreme tropical monsoon (2000+ mm) tapers back down --
     // because past a point more rain means humidity, mold, and
     // flooding, not "better". A plain ramp wrongly rated Seattle,
     // the Amazon, and the Mumbai monsoon as equally ideal.
+    //
+    // NOTE on polarity: the curve LUT stores (1 - y), and the shader
+    // uses it directly as brightness/alpha, so y=0 is the TOP of the
+    // graph = preferred/bright and y=1 is the bottom = hidden. Hence
+    // the sweet spot is y:0 and the disliked extremes are y near 1.
     defaultCurve: [
-      { x: 0,           y: 0.05 }, // true desert
-      { x: 300 / 3000,  y: 0.35 }, // arid edge
-      { x: 600 / 3000,  y: 0.9  }, // semi-arid / Mediterranean -- already great
-      { x: 900 / 3000,  y: 1.0  }, // temperate sweet spot
-      { x: 1400 / 3000, y: 1.0  }, // still ideal, green
-      { x: 2200 / 3000, y: 0.55 }, // wet, getting soggy
-      { x: 1,           y: 0.35 }, // tropical monsoon
+      { x: 0,           y: 0.95 }, // true desert -- hidden
+      { x: 300 / 3000,  y: 0.65 }, // arid edge
+      { x: 600 / 3000,  y: 0.1  }, // semi-arid / Mediterranean -- already great
+      { x: 900 / 3000,  y: 0.0  }, // temperate sweet spot -- most preferred
+      { x: 1400 / 3000, y: 0.0  }, // still ideal, green
+      { x: 2200 / 3000, y: 0.45 }, // wet, getting soggy
+      { x: 1,           y: 0.65 }, // tropical monsoon -- less preferred
     ],
     infoWidth: 304,
     infoHeight: 185

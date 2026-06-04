@@ -875,7 +875,18 @@ const AXES: Record<string, AxisConfig> = {
       { name: 'ETOPO 2022 Global Relief (slope, landslide proxy)', url: 'https://www.ncei.noaa.gov/products/etopo-global-relief-model' },
     ],
     hoverLabel: 'Disaster',
-    defaultCurve: LINEAR_UP,
+    // Disasters is the one axis whose raw value is NOT inverted: high
+    // value = more deaths = more dangerous (formatValue is norm*200
+    // deaths, with no 1-norm flip). So unlike the "more is better"
+    // axes it must use a DESCENDING curve -- safe places (low value)
+    // are preferred/bright, deadly places (high value) are hidden.
+    // The previous LINEAR_UP did the opposite, lighting up the most
+    // dangerous regions, which contradicted the "Bright = safe"
+    // description.
+    defaultCurve: [
+      { x: 0, y: 0 }, // ~0 deaths -- safe -- preferred/bright
+      { x: 1, y: 1 }, // 200 deaths/M/yr -- dangerous -- hidden
+    ],
     staticYear: 2023,
     infoWidth: 311,
     infoHeight: 184

@@ -402,9 +402,20 @@ const AXES: Record<string, AxisConfig> = {
     source: 'TerraClimate precipitation data',
     sourceUrl: 'https://www.climatologylab.org/terraclimate.html',
     hoverLabel: 'Precip.',
+    // Inverted-U / plateau rather than a plain ramp: deserts score
+    // low, the temperate-to-green band (~700-1400 mm) is the peak,
+    // and extreme tropical monsoon (2000+ mm) tapers back down --
+    // because past a point more rain means humidity, mold, and
+    // flooding, not "better". A plain ramp wrongly rated Seattle,
+    // the Amazon, and the Mumbai monsoon as equally ideal.
     defaultCurve: [
-      { x: 150 / 3000,       y: 0 },
-      { x: 900 / 3000,       y: 1 },
+      { x: 0,           y: 0.05 }, // true desert
+      { x: 300 / 3000,  y: 0.35 }, // arid edge
+      { x: 600 / 3000,  y: 0.9  }, // semi-arid / Mediterranean -- already great
+      { x: 900 / 3000,  y: 1.0  }, // temperate sweet spot
+      { x: 1400 / 3000, y: 1.0  }, // still ideal, green
+      { x: 2200 / 3000, y: 0.55 }, // wet, getting soggy
+      { x: 1,           y: 0.35 }, // tropical monsoon
     ],
     infoWidth: 304,
     infoHeight: 185

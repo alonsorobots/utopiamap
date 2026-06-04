@@ -86,6 +86,12 @@ const HASH_HYDRATION: Promise<ShareableState | null> = (() => {
 })();
 const HAS_SHARE_HASH = typeof window !== 'undefined' && isShareHash(window.location.hash || '');
 
+// Master switch for the first-visit intro / tutorial. Disabled while
+// we iterate on the rest of the app locally so it never auto-launches
+// and the replay pill stays hidden. Flip back to `true` to restore the
+// full intro experience (all the code below stays intact).
+const INTRO_ENABLED = false;
+
 const LINEAR_UP: CurvePoint[] = [
   { x: 0, y: 1 },
   { x: 1, y: 0 },
@@ -2118,7 +2124,7 @@ export default function App() {
   // (localStorage flag) and never to users arriving via a #view=
   // share link (they came for someone else's map). A "Replay intro"
   // pill in the corner of the info panel can re-trigger it later.
-  const [introOpen, setIntroOpen] = useState(() => !HAS_SHARE_HASH && !hasSeenIntro());
+  const [introOpen, setIntroOpen] = useState(() => INTRO_ENABLED && !HAS_SHARE_HASH && !hasSeenIntro());
   const finishIntro = useCallback(() => {
     markIntroSeen();
     setIntroOpen(false);
@@ -2830,7 +2836,7 @@ export default function App() {
            pill in the bottom-left that re-runs the intro on demand --
            the only discovery surface for the cinematic after first
            visit, so make sure it's visible but unobtrusive. */}
-      {!introOpen && (
+      {INTRO_ENABLED && !introOpen && (
         <button
           className="intro-replay-pill"
           onClick={replayIntro}

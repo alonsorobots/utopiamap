@@ -21,7 +21,6 @@ citation we ask users to include in any derivative work.
 | Healthcare | Malaria Atlas Project | CC BY 3.0 | Cite Weiss et al. 2020 |
 | Internet | Ookla Speedtest Open Data | CC BY-NC-SA 4.0 | Attribute Ookla; non-commercial |
 | Freedom | Transparency Intl CPI + Freedom House FIW | CC BY 4.0 + free for academic | Attribute both |
-| Deprivation | SEDAC GRDI (NASA) | CC BY 4.0 | Standard NASA SEDAC citation |
 | Travel time to city | derived from MAP friction surface | CC BY 4.0 | Cite Weiss et al. 2018 |
 
 ---
@@ -183,14 +182,6 @@ surface areas)
 - **License**: Free for academic and nonprofit use; commercial use requires
   written permission from Freedom House.
 - **Source**: https://freedomhouse.org/report/freedom-world
-
-### SEDAC Global Gridded Relative Deprivation Index (GRDI)
-- **Used for**: Deprivation (`depv`).
-- **License**: CC BY 4.0.
-- **Citation**:
-  - CIESIN (2022). *Global Gridded Relative Deprivation Index (GRDI), v1.*
-    NASA SEDAC.
-- **Source**: https://sedac.ciesin.columbia.edu
 
 ### SEDAC SSP Population Grids
 - **Used for**: Population (`pop`) future-projection scenarios.

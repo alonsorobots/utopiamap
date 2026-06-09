@@ -432,26 +432,6 @@ def process_pop():
     return results
 
 
-def process_depv():
-    """SEDAC GRDI deprivation index -> depv.pmtiles"""
-    print("\n=== DEPRIVATION (SEDAC GRDI) ===")
-    zf = DATA / "SEDAC" / "povmap-grdi-v1-grdiv1-geotiff.zip"
-    tif = DATA / "SEDAC" / "povmap-grdi-v1.tif"
-
-    if not tif.exists() and zf.exists():
-        print(f"  Extracting from {zf.name}")
-        with zipfile.ZipFile(zf) as z:
-            for member in z.namelist():
-                if member.endswith(".tif"):
-                    z.extract(member, DATA / "SEDAC")
-
-    if not tif.exists():
-        print(f"  ERROR: {tif} not found")
-        return None
-
-    return full_pipeline(tif, "depv", data_min=0, data_max=100, invert=True, nodata_val=-9999)
-
-
 def process_hcare():
     """MAP motorized travel time to healthcare -> hcare.pmtiles"""
     print("\n=== HEALTHCARE ACCESS (MAP) ===")
@@ -2722,7 +2702,6 @@ PROCESSORS = {
     "pop": process_pop,
     "gdp": process_gdp,
     "risk": process_risk,
-    "depv": process_depv,
     "hcare": process_hcare,
     "inet": process_inet,
     "free": process_free,

@@ -97,7 +97,7 @@ const LINEAR_UP: CurvePoint[] = [
   { x: 1, y: 0 },
 ];
 
-const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy', 'depv', 'e_consume']);
+const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy', 'e_consume']);
 
 // Disaster mortality lookup (deaths per million per year, per hazard, on a
 // 0.5° grid). Loaded once for hover breakdown on `risk` and the 8 individual
@@ -137,53 +137,6 @@ const HAZARD_LABELS: Record<string, string> = {
   landslide:  'Landslide',
 };
 
-// SHDI subnational HDI lookup -- per-region Health / Education / Income
-// breakdowns for the Deprivation hover. The grid array stores a small int
-// id per cell (0 = ocean / no data); the regions table maps id -> indicators
-// for that admin region (latest year, typically 2022).
-type DepvRegion = {
-  country: string;
-  region: string;
-  year: number;
-  shdi: number;
-  health: number | null;
-  education: number | null;
-  income: number | null;
-  lifexp: number | null;
-  esch_yrs: number | null;
-  gnic: number | null;
-};
-type DepvLookup = {
-  v?: number;
-  regions: Record<string, DepvRegion>;
-  grid: { res: number; w: number; h: number; ids: number[] };
-};
-let depvLookupCache: DepvLookup | null = null;
-let depvLookupLoading = false;
-function loadDepvLookup(): DepvLookup | null {
-  if (depvLookupCache) return depvLookupCache;
-  if (depvLookupLoading) return null;
-  depvLookupLoading = true;
-  fetch('/depv_lookup.json')
-    .then(r => r.ok ? r.json() : null)
-    .then((data: DepvLookup | null) => { if (data) depvLookupCache = data; })
-    .catch(() => {})
-    .finally(() => { depvLookupLoading = false; });
-  return null;
-}
-function depvRegionAt(lat: number, lng: number): DepvRegion | null {
-  const lk = depvLookupCache;
-  if (!lk) return null;
-  let lon = lng;
-  if (lon > 180) lon -= 360;
-  if (lon < -180) lon += 360;
-  const g = lk.grid;
-  const ix = Math.max(0, Math.min(g.w - 1, Math.floor((lon + 180) / g.res)));
-  const iy = Math.max(0, Math.min(g.h - 1, Math.floor((90 - lat) / g.res)));
-  const id = g.ids[iy * g.w + ix];
-  if (!id) return null;
-  return lk.regions[String(id)] ?? null;
-}
 function fmtOddsPerYear(v: number): string {
   if (v <= 0) return '~0';
   const oneIn = Math.round(1e6 / v);
@@ -1144,46 +1097,6 @@ const AXES: Record<string, AxisConfig> = {
     infoWidth: 308,
     infoHeight: 184
   },
-  depv: {
-    label: 'Deprivation',
-    dataMin: 0,
-    dataMax: 100,
-    unit: 'idx',
-    formatValue: (norm) => `${Math.round(norm * 100)}/100`,
-    formatHover: (norm, _u, lat, lng) => {
-      void loadDepvLookup();
-      const v = Math.round(norm * 100);
-      let band: string;
-      if (v < 40) band = 'Severe deprivation';
-      else if (v < 55) band = 'Low development';
-      else if (v < 70) band = 'Medium development';
-      else if (v < 85) band = 'High development';
-      else band = 'Very high development';
-      const headline = `${v}/100 (${band})`;
-
-      const reg = (lat !== undefined && lng !== undefined) ? depvRegionAt(lat, lng) : null;
-      if (!reg) return headline;
-      const fmt = (x: number | null, digits = 2) =>
-        x === null || !Number.isFinite(x) ? '?' : x.toFixed(digits);
-      const lines = [
-        `  Health     ${fmt(reg.health)}` + (reg.lifexp != null ? `  (life exp ${reg.lifexp.toFixed(0)} yr)` : ''),
-        `  Education  ${fmt(reg.education)}` + (reg.esch_yrs != null ? `  (${reg.esch_yrs.toFixed(1)} yr expected)` : ''),
-        `  Income     ${fmt(reg.income)}` + (reg.gnic != null ? `  ($${Math.round(reg.gnic).toLocaleString()} GNI/cap)` : ''),
-      ];
-      const where = reg.region ? `${reg.region}, ${reg.country}` : reg.country;
-      return [`${headline}  -- ${where}`, ...lines].join('\n');
-    },
-    description: 'Overall quality of life combining health, education, and income.\nBright = highly developed. Dark = severe deprivation. Hover for the per-region breakdown.',
-    whoIsThisFor: 'People seeking well-functioning societies with good schools, hospitals, and economic opportunity.',
-    unitDescription: 'Human Development Index from 0-100. Combines life expectancy, years of schooling, and income. Norway ~95, Brazil ~75, Chad ~40. Hover shows the three sub-indices plus raw life expectancy, expected schooling years, and GNI per capita for the subnational region.',
-    source: 'Global Data Lab (Subnational HDI)',
-    sourceUrl: 'https://globaldatalab.org/shdi/',
-    hoverLabel: 'Development',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2022,
-    infoWidth: 307,
-    infoHeight: 201
-  },
   hcare: {
     label: 'Healthcare',
     dataMin: 0,
@@ -1326,7 +1239,7 @@ const HAZARD_SUB_IDS = ['eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought
 const MAIN_AXIS_IDS = [
   'temp', 'tvar', 'water', 'pop', 'hcare',
   'gdp', 'agri', 'agrip', 'solar', 'risk',
-  'inet', 'free', 'depv', 'air', 'travel',
+  'inet', 'free', 'air', 'travel',
   'elev', 'vista', 'wind', 'energy', 'draw',
 ].filter((id) => id in AXES);
 
@@ -1372,7 +1285,6 @@ const HOTKEYS: Record<string, string> = {
   elev: 'l',
   risk: 'k',
   inet: 'i',
-  depv: 'r',
   hcare: 'h',
   travel: 'm',
   vista: 'o',

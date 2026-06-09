@@ -166,7 +166,7 @@ const ALL_AXES = [
   'energy', 'e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke',
   'e_hydro', 'e_wind', 'e_solar', 'e_geo',
   // Society
-  'agri', 'agrip', 'pop', 'gdp', 'inet', 'depv', 'hcare', 'travel', 'free',
+  'agri', 'agrip', 'pop', 'gdp', 'inet', 'hcare', 'travel', 'free',
   // Disasters (composite + per-hazard)
   'risk', 'eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought',
   'wildfire', 'landslide',

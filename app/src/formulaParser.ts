@@ -60,13 +60,7 @@ export const ALIASES: Record<string, string> = {
   t: 'temp', v: 'tvar', w: 'water', s: 'solar', n: 'wind',
   e: 'energy', a: 'agri', z: 'agrip', p: 'pop', g: 'gdp', c: 'cost',
   q: 'air', l: 'elev', k: 'risk', d: 'draw',
-  // depv used to live at 'x', but the tokenizer hard-codes 'x' as a
-  // multiplication operator (Excel-style), so `x` could never reach
-  // this lookup as an identifier and writing the formula "x" would
-  // produce a syntax error. Moved to 'r' (HDI is a "ranking" of
-  // human development), which the menu's checkbox-to-formula path
-  // can safely inject without colliding with `*`.
-  i: 'inet', r: 'depv', h: 'hcare', m: 'travel', o: 'vista', f: 'free',
+  i: 'inet', h: 'hcare', m: 'travel', o: 'vista', f: 'free',
 
   // 2) Natural-language aliases
   temperature: 'temp', warmth: 'temp', cold: 'temp', heat: 'temp',
@@ -89,7 +83,6 @@ export const ALIASES: Record<string, string> = {
   drought: 'risk', wildfire: 'risk', volcano: 'risk',
   // `conn` mirrors the short hint shown in the hamburger menu.
   conn: 'inet', internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
-  development: 'depv', deprivation: 'depv', hdi: 'depv', poverty: 'depv',
   healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',
   remoteness: 'travel', urban: 'travel', city: 'travel', wilderness: 'travel',
   freedom: 'free', democracy: 'free', liberty: 'free', corruption: 'free',

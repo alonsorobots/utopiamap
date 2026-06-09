@@ -105,15 +105,20 @@ export const ALIASES: Record<string, string> = {
   freedom: 'free', democracy: 'free', liberty: 'free', corruption: 'free',
   agriculture: 'agri', farming: 'agri', cropland: 'agri', farms: 'agri',
   suitability: 'agrip', potential: 'agrip',
-  // Energy sub-axes (use distinct words to avoid colliding with the canonical ids)
+  // Energy sub-axes. Canonical axis ids keep the `e_` prefix (used by
+  // the tile filenames + URL shares + saved sessions), but the menu
+  // shows clean short displayIds and the parser accepts them here so
+  // typing matches the menu hint. `wind` and `solar` are taken by
+  // raw-weather axes, so the power versions use the industry terms
+  // `turb` (turbine) and `pv` (photovoltaic).
   oil: 'e_oil', petroleum: 'e_oil', gasoline: 'e_oil',
   coal: 'e_coal',
-  natgas: 'e_gas', methane: 'e_gas',
+  gas: 'e_gas', natgas: 'e_gas', methane: 'e_gas',
   nuclear: 'e_nuke', nuke: 'e_nuke', reactor: 'e_nuke', uranium: 'e_nuke',
   hydro: 'e_hydro', dam: 'e_hydro', hydroelectric: 'e_hydro',
-  windfarm: 'e_wind', windenergy: 'e_wind', turbine: 'e_wind',
-  solarfarm: 'e_solar', solarenergy: 'e_solar', photovoltaic: 'e_solar',
-  geothermal: 'e_geo',
+  turb: 'e_wind', windfarm: 'e_wind', windenergy: 'e_wind', turbine: 'e_wind',
+  pv: 'e_solar', solarfarm: 'e_solar', solarenergy: 'e_solar', photovoltaic: 'e_solar',
+  geo: 'e_geo', geothermal: 'e_geo',
   consumption: 'e_consume', usage: 'e_consume', kwh: 'e_consume',
   // Vista
   view: 'vista', scenery: 'vista', landscape: 'vista', terrain: 'vista',

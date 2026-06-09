@@ -1313,6 +1313,23 @@ const DISPLAY_IDS: Record<string, string> = {
   wildfire: 'fire',
   landslide: 'slid',
   eq: 'eq',
+  // Energy sub-axes: the canonical id keeps the `e_` prefix because
+  // the data tiles + URL shares + saved sessions already use it, but
+  // every user-facing surface (menu hint, formula token, curve
+  // editor title) reads the clean displayId below. Two of them have
+  // unavoidable collisions with raw-weather axes (`wind` is raw wind
+  // speed, `solar` is raw irradiance), so e_wind / e_solar use the
+  // standard industry terms instead -- `turb` for wind turbines and
+  // `pv` for solar photovoltaics.
+  e_consume: 'kwh',
+  e_oil: 'oil',
+  e_coal: 'coal',
+  e_gas: 'gas',
+  e_nuke: 'nuke',
+  e_hydro: 'hydro',
+  e_geo: 'geo',
+  e_wind: 'turb',
+  e_solar: 'pv',
 };
 
 const HOTKEYS: Record<string, string> = {

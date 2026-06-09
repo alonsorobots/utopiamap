@@ -1352,16 +1352,11 @@ const HOTKEYS: Record<string, string> = {
   vista: 'o',
   free: 'f',
   draw: 'd',
-  e_consume: '1',
-  e_oil: '2',
-  e_coal: '3',
-  e_gas: '4',
-  e_nuke: '5',
-  e_hydro: '6',
-  e_wind: '7',
-  e_solar: '8',
-  e_geo: '9',
-  eq: '0',
+  // Sub-axes (energy sources + individual hazards) deliberately have
+  // no hotkey. Digit hotkeys collided with arithmetic in the formula
+  // bar (and were silently dropped there anyway) and crowded the menu
+  // with visually noisy badges that didn't really help anyone. The
+  // short displayId in the menu hint is the canonical short pointer.
 };
 
 const AXIS_OPTIONS: AxisOption[] = MAIN_AXIS_IDS.map((id) => {

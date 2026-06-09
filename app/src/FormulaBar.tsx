@@ -84,6 +84,18 @@ export function FormulaBar({
     tokenStart: number;
     tokenEnd: number;
   } | null>(null);
+  // Single-click on the formula display enters text-edit mode; double-click
+  // on an ident commits "solo this axis". To let double-click win without
+  // first flashing into edit mode, we defer the edit-entry by ~220 ms (the
+  // standard OS dblclick window) and the ident's onDoubleClick cancels it.
+  const editTimerRef = useRef<number | null>(null);
+  const cancelEditTimer = useCallback(() => {
+    if (editTimerRef.current !== null) {
+      window.clearTimeout(editTimerRef.current);
+      editTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => cancelEditTimer, [cancelEditTimer]);
 
   // Build the completion index once per axis-order change. For ~30
   // candidates a flat array is plenty fast (a trie would be the textbook
@@ -147,6 +159,15 @@ export function FormulaBar({
     }
     setEditing(true);
   }, [hoveredIdentStart, onSelectionChange]);
+
+  // Defer enter-edit so an ident double-click has a chance to cancel.
+  const scheduleEnterEdit = useCallback(() => {
+    cancelEditTimer();
+    editTimerRef.current = window.setTimeout(() => {
+      editTimerRef.current = null;
+      enterEdit();
+    }, 220);
+  }, [enterEdit, cancelEditTimer]);
 
   const onIdentEnter = useCallback((tok: Token) => {
     setHoveredIdentStart(tok.start);
@@ -307,7 +328,7 @@ export function FormulaBar({
     <div
       ref={displayRef}
       className={error ? 'formula-display formula-display-error' : 'formula-display'}
-      onClick={enterEdit}
+      onClick={scheduleEnterEdit}
       onKeyDown={enterEdit}
       tabIndex={0}
       role="textbox"
@@ -337,15 +358,17 @@ export function FormulaBar({
             <span
               key={`${i}-${tok.start}`}
               className={isHovered ? 'formula-token-ident formula-token-ident-hover' : 'formula-token-ident'}
-              title="Click to tune this axis"
+              title="Hover to peek, double-click to tune this axis"
               onMouseEnter={() => onIdentEnter(tok)}
               onMouseLeave={onIdentLeave}
-              // Click on an identifier opens the curve editor for it.
-              // Stop propagation so the parent's onClick (enter edit
-              // mode) doesn't also fire.
-              onClick={(e) => {
+              // Single click bubbles to the display's onClick, which
+              // schedules enter-edit after the ~220 ms dblclick window.
+              // The dblclick handler below cancels that timer and
+              // commits the solo-this-axis intent instead.
+              onDoubleClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                cancelEditTimer();
                 onIdentDoubleClick?.(tok.text);
               }}
             >

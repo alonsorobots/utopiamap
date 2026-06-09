@@ -16,10 +16,11 @@ import {
   readValueAtLngLat,
   exportPaintedMask,
   importPaintedMask,
+  FORMULA_OUTPUT_AXIS,
 } from './heatmapLayer';
 import { isAxisTemporal, getTemporalRange, getProjections, getAllAxisYears, loadCatalog, getCatalog, getTilesBase } from './tileDataLoader';
 import { tokenize as tokenizeFormula, resolveAxisAlias } from './formulaParser';
-import type { FormulaError, PaintedMask } from './heatmapLayer';
+import type { PaintedMask } from './heatmapLayer';
 import { CurveEditor, evaluateCurvePoints } from './CurveEditor';
 import type { AxisConfig, CurvePoint } from './CurveEditor';
 import { DraggablePanel } from './DraggablePanel';
@@ -1225,6 +1226,27 @@ const AXES: Record<string, AxisConfig> = {
     unitDescription: 'On or off. Painted areas score full marks in formulas. Use with other layers: "draw * temp" shows temperature only in your painted region.',
     source: 'You! (hand-drawn)',
   },
+  // Pseudo-axis surfaced in the CurveEditor when a multi-axis formula is
+  // showing its composite output. The 256-tap LUT is sampled by the
+  // formula shader AFTER evaluating the user's expression, so the user
+  // can carve out a sharper highlight band (or hide low scores entirely)
+  // without rewriting the formula. Default curve is identity so it's a
+  // no-op until the user touches it. Not reachable via the menu /
+  // hotkeys / arrow keys -- it appears only when the editor displays it.
+  [FORMULA_OUTPUT_AXIS]: {
+    label: 'Formula output',
+    dataMin: 0,
+    dataMax: 1,
+    unit: '',
+    formatValue: (norm) => norm.toFixed(2),
+    formatHover: (norm) => `score ${norm.toFixed(2)}`,
+    description: 'Remaps the formula\'s composite result before it gets coloured.\nPush the highlight down to spotlight only the very best matches, or pull it up to keep more of the map visible.',
+    whoIsThisFor: 'Anyone tuning a multi-axis formula -- sharpen the contrast without touching the formula itself.',
+    unitDescription: 'X is the formula result in [0, 1]. Sharp drops at the right hide everything but the top scores; pulling the right corner up reveals more of the long tail.',
+    source: 'derived',
+    hoverLabel: 'Formula output',
+    defaultCurve: LINEAR_UP,
+  },
 };
 
 const ENERGY_SUB_IDS = ['e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke', 'e_hydro', 'e_wind', 'e_solar', 'e_geo'];
@@ -1449,6 +1471,16 @@ export default function App() {
   const [showSourcesPanel, setShowSourcesPanel] = useState(false);
   const [formula, setFormula] = useState(saved?.formula ?? '');
   const [formulaError, setFormulaError] = useState<string | null>(null);
+  // Hover-over-formula-ident "sneak peek": when set, the map renders that
+  // single axis and the CurveEditor displays it -- but no persistent
+  // state (activeAxis, formulaSoloMode) is touched. Cleared on mouse-out.
+  const [previewAxis, setPreviewAxis] = useState<string | null>(null);
+  // True after the user double-clicks an ident in a multi-axis formula.
+  // Map + CurveEditor switch to single-axis (activeAxis). Double-clicking
+  // the map flips this off, returning to composite + "Formula output".
+  // Auto-reset when the formula loses multi-ident status or activeAxis
+  // is no longer referenced by the formula.
+  const [formulaSoloMode, setFormulaSoloMode] = useState<boolean>(false);
   const curveStatesRef = useRef<Record<string, CurvePoint[]>>(saved?.curves ?? {});
   const unitStatesRef = useRef<Record<string, string>>(saved?.units ?? {});
 
@@ -1635,21 +1667,113 @@ export default function App() {
     return toks.length === 1 && toks[0].type === 'ident';
   }, []);
 
+  // True when the formula expresses a real composite (more than one ident,
+  // or operators around an ident). Drives the "Formula output" CurveEditor
+  // and the formula-vs-single-axis split for hover preview / solo mode.
+  const isCompositeFormula = useCallback((f: string): boolean => {
+    if (!f.trim()) return false;
+    if (isSingleAxisFormula(f)) return false;
+    const toks = tokenizeFormula(f).filter(t => t.type !== 'space');
+    return toks.some(t => t.type === 'ident');
+  }, [isSingleAxisFormula]);
+
+  // The set of canonical axis ids referenced by the current formula. Used
+  // to auto-exit formula-solo mode when activeAxis is no longer reachable
+  // from the formula (e.g. user edited "pop - water" -> "pop + temp"
+  // while soloed on water).
+  const formulaAxesSet = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    const toks = tokenizeFormula(formula).filter(t => t.type === 'ident');
+    for (const t of toks) {
+      const id = resolveAxisAlias(t.text);
+      if (AXES[id]) out.add(id);
+    }
+    return out;
+  }, [formula]);
+
+  // Auto-drop solo mode when the *formula* changes in a way that makes
+  // solo nonsensical -- formula went single-axis, or the soloed axis was
+  // removed from the formula. Deliberately watches only formula (not
+  // activeAxis) so that picking an unrelated axis via menu/hotkey/arrow
+  // doesn't immediately bounce back to composite (handleAxisChange has
+  // its own "enter solo" intent we don't want to fight).
+  useEffect(() => {
+    if (!formulaSoloModeRef.current) return;
+    if (!isCompositeFormula(formula)) { setFormulaSoloMode(false); return; }
+    if (!formulaAxesSet.has(activeAxisRef.current)) setFormulaSoloMode(false);
+  }, [formula, isCompositeFormula, formulaAxesSet]);
+
+  // Clear hover preview if the previewed ident leaves the formula
+  // (user edited the bar while a token was being hovered).
+  useEffect(() => {
+    if (previewAxis && !formulaAxesSet.has(previewAxis)) setPreviewAxis(null);
+  }, [previewAxis, formulaAxesSet]);
+
+  // Refs for the reconciliation effect below (so we can keep its
+  // dependency list tight and read fresh state without re-creating
+  // every closure that touches the heatmap).
+  const previewAxisRef = useRef(previewAxis);
+  previewAxisRef.current = previewAxis;
+  const formulaSoloModeRef = useRef(formulaSoloMode);
+  formulaSoloModeRef.current = formulaSoloMode;
+
+  // Single source of truth for "what should the heatmap render right
+  // now?". Resolves hover preview, solo mode, composite formula and
+  // active axis into one string that we hand to setHeatmapFormula.
+  const computeHeatmapTarget = useCallback((): string => {
+    const f = formulaRef.current;
+    const p = previewAxisRef.current;
+    const solo = formulaSoloModeRef.current;
+    const active = activeAxisRef.current;
+    if (p) return DISPLAY_IDS[p] ?? p;
+    if (isCompositeFormula(f) && !solo) return f;
+    if (isCompositeFormula(f) && solo) return DISPLAY_IDS[active] ?? active;
+    return f.trim() || (DISPLAY_IDS[active] ?? active);
+  }, [isCompositeFormula]);
+
+  // Reconcile heatmap whenever any input to computeHeatmapTarget changes.
+  // The effect runs after render so the heatmap state lags React state by
+  // one frame, which is invisible in practice (the GL repaint happens
+  // anyway on the next browser frame). `mapLoaded` is in the dep list so
+  // the first run after the map finishes loading also pushes whatever
+  // state hydrated before the GL context existed.
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const target = computeHeatmapTarget();
+    const err = setHeatmapFormula(target);
+    setFormulaError(err ? err.message : null);
+    mapRef.current.triggerRepaint();
+  }, [mapLoaded, formula, activeAxis, previewAxis, formulaSoloMode, computeHeatmapTarget]);
+
+  // What axis the CurveEditor should display. Hover preview wins, then
+  // composite formula maps to the synthetic "Formula output" axis, then
+  // we fall through to activeAxis.
+  const editorDisplayAxis: string =
+    previewAxis
+    ?? (isCompositeFormula(formula) && !formulaSoloMode ? FORMULA_OUTPUT_AXIS : activeAxis);
+
   const handleAxisChange = useCallback((axisId: string) => {
     setActiveAxis(axisId);
     setHeatmapActiveAxis(axisId);
+    // Hover preview interrupts the menu/hotkey path -- if the user is
+    // currently previewing something else, drop it so the new active
+    // axis can take effect immediately.
+    setPreviewAxis(null);
     if (isSingleAxisFormula(formulaRef.current)) {
       // Show the friendly short hint (e.g. "dis", "conn") in the formula
       // bar when one is defined, so the formula matches what the menu
       // displays. The alias resolves back to the canonical id at parse time.
       const formulaText = DISPLAY_IDS[axisId] ?? axisId;
       setFormula(formulaText);
-      const err = setHeatmapFormula(formulaText);
-      setFormulaError(err ? err.message : null);
+    } else if (isCompositeFormula(formulaRef.current)) {
+      // Any explicit axis pick while a composite formula is loaded is
+      // treated as "show me just this axis instead of the composite".
+      // The formula string itself is preserved; double-clicking the map
+      // restores the composite view.
+      setFormulaSoloMode(true);
     }
     snapYearToAxis(axisId);
-    mapRef.current?.triggerRepaint();
-  }, [snapYearToAxis, isSingleAxisFormula]);
+  }, [snapYearToAxis, isSingleAxisFormula, isCompositeFormula]);
 
   // Real-time collaboration. Keeps activeAxis / formula / year in lock-step
   // with everyone else in the same #room=<id>. Cursor positions are pushed
@@ -1660,23 +1784,18 @@ export default function App() {
       setHeatmapActiveAxis(axis);
       if (isSingleAxisFormula(formulaRef.current)) {
         setFormula(axis);
-        const err = setHeatmapFormula(axis);
-        setFormulaError(err ? err.message : null);
       }
       snapYearToAxis(axis);
-      mapRef.current?.triggerRepaint();
+      // Heatmap reconciliation is driven by the (formula, activeAxis, ...)
+      // effect; the state setters above trigger it on the next render.
     },
     onFormula: (f) => {
       // A peer publishing a fresh empty value (which can happen during
       // a join race or if someone clears their bar) shouldn't flash
       // the local user's formula bar red. Treat empty/whitespace as
-      // "no formula" -- which setHeatmapFormula already accepts as a
-      // no-op single-axis fallback.
-      const trimmed = f.trim();
-      setFormula(trimmed);
-      const err = setHeatmapFormula(trimmed);
-      setFormulaError(err ? err.message : null);
-      mapRef.current?.triggerRepaint();
+      // "no formula" -- the reconciliation effect handles the empty
+      // fallback to the active axis.
+      setFormula(f.trim());
     },
     onYear: (y, s) => {
       // Clamp incoming year to one that has data for *our* current
@@ -1752,16 +1871,19 @@ export default function App() {
       if (idx < 0) return prev;
       const next = list[(idx + dir + list.length) % list.length];
       setHeatmapActiveAxis(next);
+      setPreviewAxis(null);
       if (isSingleAxisFormula(formulaRef.current)) {
         setFormula(next);
-        const err = setHeatmapFormula(next);
-        setFormulaError(err ? err.message : null);
+      } else if (isCompositeFormula(formulaRef.current)) {
+        // Arrow keys while a composite formula is loaded swap the
+        // single-axis view; the formula text is preserved and the user
+        // can return to composite by double-clicking the map.
+        setFormulaSoloMode(true);
       }
       snapYearToAxis(next);
-      mapRef.current?.triggerRepaint();
       return next;
     });
-  }, [snapYearToAxis, isSingleAxisFormula]);
+  }, [snapYearToAxis, isSingleAxisFormula, isCompositeFormula]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1862,33 +1984,44 @@ export default function App() {
 
   const handleFormulaChange = useCallback((f: string) => {
     setFormula(f);
-    const err: FormulaError | null = setHeatmapFormula(f);
-    setFormulaError(err ? err.message : null);
-    mapRef.current?.triggerRepaint();
+    // Heatmap reconciliation lives in the (formula, ...) effect above; no
+    // need to also push to the GL layer here. We still keep the parse
+    // attempt so the user sees error highlighting on bad input, even
+    // when the reconciliation would otherwise mask the failure.
   }, []);
 
-  // Double-click an axis identifier in the formula bar -> switch the
-  // active axis so the curve editor lets the user tune that axis. The
-  // formula itself is left alone (handleAxisChange already only
-  // rewrites it for single-ident formulas), so e.g. double-clicking
-  // "water" in "temp + water" just swaps the graph panel to water
-  // while the map keeps showing the full formula.
+  // Double-click an axis identifier in the formula bar -> COMMIT to that
+  // axis as the new active axis AND enter formula-solo mode. The map +
+  // CurveEditor swap from the composite "Formula output" to that single
+  // axis; the formula string is left alone so the user can flip back to
+  // composite by double-clicking the map.
   const handleFormulaIdentDoubleClick = useCallback((text: string) => {
     const axisId = resolveAxisAlias(text);
     if (!AXES[axisId]) return;
+    setPreviewAxis(null);
+    setFormulaSoloMode(true);
     handleAxisChange(axisId);
   }, [handleAxisChange]);
 
+  // Hover an ident in the formula bar -> "sneak peek" both the map and
+  // the CurveEditor without disturbing activeAxis / formulaSoloMode.
+  // The reconciliation effect picks up the previewAxis change.
   const handleFormulaSelectionChange = useCallback((sel: string | null) => {
-    if (sel && sel.trim().length > 0) {
-      setHeatmapFormula(sel);
-      mapRef.current?.triggerRepaint();
-    } else {
-      const err = setHeatmapFormula(formula);
-      setFormulaError(err ? err.message : null);
-      mapRef.current?.triggerRepaint();
-    }
-  }, [formula]);
+    if (!sel || !sel.trim()) { setPreviewAxis(null); return; }
+    const axisId = resolveAxisAlias(sel.trim());
+    if (!AXES[axisId]) { setPreviewAxis(null); return; }
+    setPreviewAxis(axisId);
+  }, []);
+
+  // Double-click the MAP while in formula-solo mode -> exit back to the
+  // composite formula view. Both map and CurveEditor swap to the
+  // "Formula output" rendering. No-op outside solo mode so the user
+  // doesn't see a surprise state change for an idle double-click.
+  const handleMapDoubleClick = useCallback(() => {
+    if (!formulaSoloMode) return;
+    setPreviewAxis(null);
+    setFormulaSoloMode(false);
+  }, [formulaSoloMode]);
 
   useEffect(() => {
     if (saved?.activeAxis) setHeatmapActiveAxis(saved.activeAxis);
@@ -1897,6 +2030,17 @@ export default function App() {
       setFormulaError(err ? err.message : null);
     }
     if (saved?.year) setTimeYear(saved.year, 'historical');
+    // Upload every persisted curve into its GPU LUT. The CurveEditor's
+    // mount path only uploads the currently-visible axis, so without
+    // this loop a returning user would see all their saved curves
+    // ignored on axes that the editor doesn't happen to be showing
+    // (notably the FORMULA_OUTPUT_AXIS remap curve).
+    if (saved?.curves) {
+      for (const [axisId, points] of Object.entries(saved.curves)) {
+        if (!Array.isArray(points)) continue;
+        try { updateLookupTexture(axisId, evaluateCurvePoints(points as CurvePoint[])); } catch {}
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1936,6 +2080,14 @@ export default function App() {
       const map = mapRef.current;
       if (shared.curves && typeof shared.curves === 'object') {
         curveStatesRef.current = { ...curveStatesRef.current, ...shared.curves };
+        // Rasterize every shared curve into its GPU LUT now, not just the
+        // one the CurveEditor happens to render. Important for axes used
+        // inside a multi-axis formula (whose editors never mount) and
+        // for the FORMULA_OUTPUT_AXIS remap curve.
+        for (const [axisId, points] of Object.entries(shared.curves)) {
+          if (!Array.isArray(points)) continue;
+          try { updateLookupTexture(axisId, evaluateCurvePoints(points as CurvePoint[])); } catch {}
+        }
       }
       if (shared.units && typeof shared.units === 'object') {
         unitStatesRef.current = { ...unitStatesRef.current, ...shared.units };
@@ -2448,13 +2600,25 @@ export default function App() {
       setHoverInfo(null);
     }
 
+    // Double-clicking the map exits formula-solo mode and returns to the
+    // composite "Formula output" view. We swallow the default
+    // double-click-zoom only in that case so normal browsing still zooms
+    // when there's nothing to exit from.
+    function onDblClick(e: maplibregl.MapMouseEvent) {
+      if (!formulaSoloModeRef.current) return;
+      e.preventDefault();
+      handleMapDoubleClick();
+    }
+
     map.on('mousemove', onMove);
+    map.on('dblclick', onDblClick);
     map.getCanvas().addEventListener('mouseleave', onLeave);
     return () => {
       map.off('mousemove', onMove);
+      map.off('dblclick', onDblClick);
       map.getCanvas().removeEventListener('mouseleave', onLeave);
     };
-  }, [mapLoaded, computeHoverText, collab]);
+  }, [mapLoaded, computeHoverText, collab, handleMapDoubleClick]);
 
   useEffect(() => {
     const pos = lastMapPointRef.current;
@@ -2526,7 +2690,11 @@ export default function App() {
     input.click();
   }, []);
 
-  const axis = AXES[activeAxis];
+  // The axis the CurveEditor + info panel are currently presenting.
+  // Diverges from activeAxis when hovering a formula ident (preview)
+  // or showing the composite "Formula output" pseudo-axis.
+  const axis = AXES[editorDisplayAxis] ?? AXES[activeAxis];
+  const editorIsOutput = editorDisplayAxis === FORMULA_OUTPUT_AXIS;
 
   const [initialSizes] = useState(() => {
     try {
@@ -2621,17 +2789,19 @@ export default function App() {
         // (two-panel side-by-side) layouts stay in lockstep.
         const renderCurve = (w: number, h: number) => (
           <CurveEditor
-            key={`${activeAxis}:${hydrationKey}`}
+            key={`${editorDisplayAxis}:${hydrationKey}`}
             width={w}
             height={h}
             axis={axis}
-            axisId={activeAxis}
+            axisId={editorDisplayAxis}
             onCurveChange={handleCurveChange}
-            savedPoints={curveStatesRef.current[activeAxis]}
+            savedPoints={curveStatesRef.current[editorDisplayAxis]}
             onPointsChange={handlePointsChange}
-            savedUnit={unitStatesRef.current[activeAxis]}
+            savedUnit={unitStatesRef.current[editorDisplayAxis]}
             onUnitChange={handleUnitChange}
-            subtitle={`${activeAxis} [${HOTKEYS[activeAxis]?.toUpperCase() ?? ''}]`}
+            subtitle={editorIsOutput
+              ? 'composite of all formula axes'
+              : `${editorDisplayAxis} [${HOTKEYS[editorDisplayAxis]?.toUpperCase() ?? ''}]`}
           />
         );
 

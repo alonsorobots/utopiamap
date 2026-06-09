@@ -100,9 +100,14 @@ function buildFormulaFrag(axisIds: string[], glslExpr: string): string {
     `    vec4 samp_${id} = texture2D(u_data_${id}, v_uv);\n    float raw_${id} = samp_${id}.r;\n    if (samp_${id}.a < 0.01) { gl_FragColor = vec4(0.0); return; }\n    float f_${id} = texture2D(u_curve_${id}, vec2(raw_${id}, 0.5)).r;`
   ).join('\n');
 
+  // u_output_curve is a 256-tap LUT applied to the final formula result so
+  // the user can remap the composite (graph editor exposes it as the
+  // "Formula output" axis). Defaults to identity, so adding it costs
+  // nothing perceptual when the user hasn't touched it.
   return `
   precision mediump float;
 ${uniforms}
+  uniform sampler2D u_output_curve;
   uniform float u_opacity;
   varying vec2 v_uv;
 
@@ -112,6 +117,7 @@ ${uniforms}
 ${samples}
     float result = ${glslExpr};
     result = clamp(result, 0.0, 1.0);
+    result = texture2D(u_output_curve, vec2(result, 0.5)).r;
     vec3 col = colormap(result);
     float alpha = result * u_opacity;
     gl_FragColor = vec4(col * alpha, alpha);
@@ -135,7 +141,19 @@ let currentLocations: {
   u_tile_size: WebGLUniformLocation | null;
   dataUniforms: Map<string, WebGLUniformLocation>;
   curveUniforms: Map<string, WebGLUniformLocation>;
+  // Only set when the active program is the formula shader (which is
+  // the only one that exposes u_output_curve). Single-axis programs
+  // leave this null and the render path skips the binding.
+  outputCurveUniform: WebGLUniformLocation | null;
 } | null = null;
+
+// Pseudo-axis id for the formula-output remap curve. Lives in the
+// curveEntries / curveStatesRef stores like a normal axis (so it
+// participates in collab sync, save files, etc.) but has no data
+// tile pipeline -- only a 256-tap LUT that the formula shader
+// samples after evaluating the user's expression. The CurveEditor
+// renders it as "Formula output".
+export const FORMULA_OUTPUT_AXIS = '__output';
 
 let currentFormulaAxes: string[] = [];
 let currentFormulaExpr: string | null = null;
@@ -995,6 +1013,7 @@ function rebuildProgram(gl: WebGLRenderingContext, axes: string[], glslExpr: str
     u_tile_size: gl.getUniformLocation(prog, 'u_tile_size'),
     dataUniforms,
     curveUniforms,
+    outputCurveUniform: glslExpr ? gl.getUniformLocation(prog, 'u_output_curve') : null,
   };
 }
 
@@ -1032,13 +1051,14 @@ export function createHeatmapLayer(): CustomLayerInterface {
 
       // Probe the GPU's combined texture-unit limit and derive the
       // formula axis cap from it. Halved because each axis binds two
-      // textures (data + curve). Clamped below by FALLBACK_MAX_AXES
+      // textures (data + curve), minus one slot reserved for the
+      // formula-output remap LUT. Clamped below by FALLBACK_MAX_AXES
       // so a busted driver can't tighten the cap further than the
       // spec-guaranteed 4.
       try {
         const units = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) as number;
         if (Number.isFinite(units) && units >= 8) {
-          maxFormulaAxes = Math.max(FALLBACK_MAX_AXES, Math.floor(units / 2));
+          maxFormulaAxes = Math.max(FALLBACK_MAX_AXES, Math.floor((units - 1) / 2));
         }
       } catch {
         // Keep FALLBACK_MAX_AXES on failure.
@@ -1141,6 +1161,21 @@ export function createHeatmapLayer(): CustomLayerInterface {
         gl.bindTexture(gl.TEXTURE_2D, curveEntry.texture);
         const cLoc = currentLocations.curveUniforms.get(id);
         if (cLoc) gl.uniform1i(cLoc, unit);
+      }
+
+      // Formula-mode only: bind the output-remap LUT one unit past the per-axis
+      // curve textures. The shader's `result = texture2D(u_output_curve, ...)`
+      // step applies after the user's expression. Identity by default, so the
+      // user only notices when they actively shape it in the editor.
+      if (currentLocations.outputCurveUniform) {
+        ensureCurveTexture(gl, FORMULA_OUTPUT_AXIS);
+        const outEntry = curveEntries.get(FORMULA_OUTPUT_AXIS);
+        if (outEntry?.texture) {
+          const unit = numAxes * 2;
+          gl.activeTexture(gl.TEXTURE0 + unit);
+          gl.bindTexture(gl.TEXTURE_2D, outEntry.texture);
+          gl.uniform1i(currentLocations.outputCurveUniform, unit);
+        }
       }
 
       // Additive blending: heatmap glows on top of the dark base map

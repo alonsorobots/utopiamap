@@ -393,6 +393,15 @@ const AXES: Record<string, AxisConfig> = {
     dataMin: 0,
     dataMax: 20,
     unit: 'm/s',
+    // The tile is encoded for 0-20 m/s but anything above ~15 m/s is
+    // a sustained gale that almost nobody lives in -- the useful
+    // signal sits in the 0-15 m/s window. Clip the editor's visible
+    // x to that range so the curve has resolution where it matters.
+    // Cells above 15 m/s still render (they clamp to the curve's
+    // rightmost y -- bright with LINEAR_UP for kite surfers /
+    // turbines, hidden for the calm-loving default).
+    xRangeMin: 0,
+    xRangeMax: 15 / 20,
     formatValue: (norm) => `${(norm * 20).toFixed(1)} m/s`,
     formatHover: (norm) => {
       const v = norm * 20;
@@ -406,13 +415,15 @@ const AXES: Record<string, AxisConfig> = {
     },
     description: 'How windy a place is on average.\nBright = windy. Dark = calm.',
     whoIsThisFor: 'Wind energy prospectors, people wanting to avoid constantly blustery areas, or kite surfers.',
-    unitDescription: 'Meters per second = how fast the air moves. Walking pace ~1.5, gentle breeze ~5, strong wind ~10, dangerous gale ~20+.',
+    unitDescription: 'Meters per second = how fast the air moves. Walking pace ~1.5, gentle breeze ~5, strong wind ~10, dangerous gale ~15+.',
     source: 'Global Wind Atlas / ERA5',
     sourceUrl: 'https://globalwindatlas.info/',
     hoverLabel: 'Wind speed',
+    // defaultCurve x values are in EDITOR space (post xRange projection),
+    // so 5.5 m/s sits at 5.5/15 in editor x, and 10 m/s at 10/15.
     defaultCurve: [
-      { x: 5.5 / 20, y: 1 },
-      { x: 10  / 20, y: 0 },
+      { x: 5.5 / 15, y: 1 },
+      { x: 10  / 15, y: 0 },
     ],
     staticYear: 2020,
     infoWidth: 305,

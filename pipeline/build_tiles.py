@@ -2274,144 +2274,103 @@ def process_agrip():
 
 
 def process_energy():
-    """WRI power plants + World Bank consumption -> energy.pmtiles (net energy balance)"""
-    print("\n=== ENERGY BALANCE (WRI + World Bank) ===")
+    """World Bank net energy imports -> energy.pmtiles (clean country-level balance).
+
+    Also exports energy_scores.json with the per-country score AND the
+    per-fuel capacity breakdown from WRI's Global Power Plant Database,
+    which the axis hover tooltip uses to surface "France -- +35 (Major
+    exporter)\\nNuclear 70%, Hydro 12%, Wind 8%, ..."
+
+    NOTE: We used to ALSO paint a per-plant log-capacity boost (up to
+    +30 points) on top of the country choropleth, which lit up tiny
+    spots around individual power plants. Now that the per-fuel
+    sub-axes (e_oil, e_coal, ...) have been retired, the overlay just
+    created visual noise on what should be a clean choropleth -- so
+    the tile is now pure country-level. The WRI plant CSV is still
+    consumed, but only to build the fuel-breakdown JSON for hover.
+    """
+    print("\n=== ENERGY BALANCE (World Bank net imports, WRI fuel mix) ===")
 
     import csv
 
     wri_path = DATA / "global_power_plant_database.csv"
-    consumption_path = DATA / "energy_consumption_wb.json"
     imports_path = DATA / "energy_imports_net_wb.json"
 
-    if not wri_path.exists():
-        print(f"  ERROR: {wri_path} not found")
-        print("  Download: curl -L -o data/global_power_plant_database.csv "
-              '"https://raw.githubusercontent.com/wri/global-power-plant-database'
-              '/master/output_database/global_power_plant_database.csv"')
+    if not imports_path.exists():
+        print(f"  ERROR: {imports_path} not found -- can't build country balance")
         return None
 
-    # --- Layer A: Rasterize generation capacity from WRI point data ---
-    print("  Layer A: Rasterizing power plant capacity...")
-    resolution = 0.1
-    width = int(360 / resolution)
-    height = int(180 / resolution)
-
-    gen_grid = np.zeros((height, width), dtype=np.float64)
-    plant_count = 0
+    # --- Fuel breakdown from WRI (hover-only, NOT painted onto the tile) ---
     fuel_breakdown: dict[str, dict[str, float]] = {}
-
-    with open(wri_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                lat = float(row["latitude"])
-                lon = float(row["longitude"])
-                cap = float(row["capacity_mw"])
-            except (ValueError, KeyError):
-                continue
-            
-            country_name = row.get("country_long", "")
-            fuel = row.get("primary_fuel", "")
-            if country_name and fuel:
+    if wri_path.exists():
+        print("  Parsing WRI plant DB for per-country fuel mix (hover only)...")
+        with open(wri_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    cap = float(row["capacity_mw"])
+                except (ValueError, KeyError):
+                    continue
+                country_name = row.get("country_long", "")
+                fuel = row.get("primary_fuel", "")
+                if not country_name or not fuel:
+                    continue
                 if country_name not in fuel_breakdown:
                     fuel_breakdown[country_name] = {}
                 fuel_breakdown[country_name][fuel] = fuel_breakdown[country_name].get(fuel, 0) + cap
+        print(f"    Fuel mix for {len(fuel_breakdown)} countries")
+    else:
+        print(f"  WARNING: {wri_path} not found -- hover will skip fuel mix")
 
-            xi = int((lon + 180) / resolution)
-            yi = int((90 - lat) / resolution)
-            xi = min(max(xi, 0), width - 1)
-            yi = min(max(yi, 0), height - 1)
+    # --- Country-level energy balance from World Bank ---
+    print("  Parsing World Bank net energy imports indicator...")
+    scores = _parse_worldbank_json(imports_path)
+    if not scores:
+        print("  ERROR: no scores parsed")
+        return None
+    print(f"    Parsed {len(scores)} country scores")
 
-            gen_grid[yi, xi] += cap
-            plant_count += 1
+    # Net imports: positive = importer, negative = exporter. We want
+    # higher = better (net exporter), so invert the sign and shift to
+    # a 0-100 scale centered at 50. Clamp extremes (some countries
+    # report >400% or <-1000%) into +/-200.
+    balance_scores: dict[str, float] = {}
+    for country, val in scores.items():
+        clamped = max(min(-val, 200), -200)
+        normalized = (clamped + 200) / 400 * 100
+        balance_scores[country] = normalized
 
-    print(f"    Rasterized {plant_count} plants onto {width}x{height} grid")
-    print(f"    Total global capacity: {gen_grid.sum():,.0f} MW")
-    valid_cells = np.count_nonzero(gen_grid)
-    print(f"    Grid cells with plants: {valid_cells}")
+    balance_grid, profile = rasterize_country_data(balance_scores, nodata=-9999)
 
-    # --- Choose approach based on available data ---
-    # If we have the net-imports indicator, use it directly as a cleaner
-    # country-level energy balance. Otherwise fall back to consumption data.
-    if imports_path.exists():
-        print("  Using World Bank net energy imports indicator (direct balance)...")
-        scores = _parse_worldbank_json(imports_path)
-        if scores:
-            print(f"    Parsed {len(scores)} country scores")
-            # Net imports: positive = importer, negative = exporter
-            # We want higher = better (net exporter), so invert the sign
-            # and shift to a 0-100 scale centered at 50
-            # Clamp extreme values (some countries have >400% or <-1000%)
-            balance_scores = {}
-            for country, val in scores.items():
-                clamped = max(min(-val, 200), -200)
-                normalized = (clamped + 200) / 400 * 100
-                balance_scores[country] = normalized
+    # --- Export JSON with normalized GeoJSON names ---
+    exported_data: dict[str, dict] = {}
 
-            balance_grid, profile = rasterize_country_data(balance_scores, nodata=-9999)
+    balance_map = map_country_names(balance_scores)
+    for geo_name, wb_name in balance_map.items():
+        exported_data[geo_name] = {"score": balance_scores[wb_name]}
 
-            # --- Export JSON with normalized GeoJSON names ---
-            exported_data = {}
-            
-            balance_map = map_country_names(balance_scores)
-            for geo_name, wb_name in balance_map.items():
-                exported_data[geo_name] = {"score": balance_scores[wb_name]}
-                
-            fuel_map = map_country_names(fuel_breakdown)
-            for geo_name, wri_name in fuel_map.items():
-                if geo_name not in exported_data:
-                    exported_data[geo_name] = {}
-                exported_data[geo_name]["fuels"] = fuel_breakdown[wri_name]
+    fuel_map = map_country_names(fuel_breakdown)
+    for geo_name, wri_name in fuel_map.items():
+        if geo_name not in exported_data:
+            exported_data[geo_name] = {}
+        exported_data[geo_name]["fuels"] = fuel_breakdown[wri_name]
 
-            import json
-            scores_path = TILES / "energy" / "energy_scores.json"
-            ensure_dir(scores_path.parent)
-            with open(scores_path, "w") as f:
-                json.dump(exported_data, f, separators=(",", ":"))
-            print(f"  Exported energy_scores.json with {len(exported_data)} countries")
+    import json
+    scores_path = TILES / "energy" / "energy_scores.json"
+    ensure_dir(scores_path.parent)
+    with open(scores_path, "w") as f:
+        json.dump(exported_data, f, separators=(",", ":"))
+    print(f"  Exported energy_scores.json with {len(exported_data)} countries")
 
-            # Blend: where we have plant data, enhance the country-level
-            # signal with sub-national detail from generation capacity
-            gen_log = np.where(gen_grid > 0, np.log1p(gen_grid), 0)
-            if gen_log.max() > 0:
-                gen_norm = gen_log / gen_log.max() * 30  # up to 30 point boost
-
-            blended = np.where(
-                balance_grid > -9999,
-                np.clip(balance_grid + gen_norm, 0, 100),
-                -9999,
-            )
-
-            tif_path = TILES / "energy" / "energy_raw.tif"
-            ensure_dir(tif_path.parent)
-            with rasterio.open(tif_path, "w", **profile) as dst:
-                dst.write(blended.astype(np.float32), 1)
-
-            out = full_pipeline(tif_path, "energy", data_min=0, data_max=100, nodata_val=-9999)
-            tif_path.unlink(missing_ok=True)
-            return out
-
-    # Fallback: generation-only from WRI data
-    print("  Fallback: Using generation capacity only (no consumption data)")
-    transform = from_bounds(-180, -90, 180, 90, width, height)
-    profile = {
-        "driver": "GTiff",
-        "dtype": "float32",
-        "width": width,
-        "height": height,
-        "count": 1,
-        "crs": "EPSG:4326",
-        "transform": transform,
-        "nodata": 0,
-        "compress": "deflate",
-    }
-
+    # Write the clean country-level choropleth straight to a tif (no
+    # per-plant boost). Every cell inside a country polygon carries
+    # that country's normalized balance score.
     tif_path = TILES / "energy" / "energy_raw.tif"
     ensure_dir(tif_path.parent)
     with rasterio.open(tif_path, "w", **profile) as dst:
-        dst.write(gen_grid.astype(np.float32), 1)
+        dst.write(balance_grid.astype(np.float32), 1)
 
-    out = full_pipeline(tif_path, "energy", log_transform=True, nodata_val=0)
+    out = full_pipeline(tif_path, "energy", data_min=0, data_max=100, nodata_val=-9999)
     tif_path.unlink(missing_ok=True)
     return out
 

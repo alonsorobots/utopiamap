@@ -858,12 +858,23 @@ const AXES: Record<string, AxisConfig> = {
     dataMin: 0,
     dataMax: 1,
     unit: 'view',
+    // The raw viewshed score has a long boring tail in the bottom 75%
+    // (valley floors, forest interiors, plains -- all look the same
+    // "low view"). All the meaningful variation lives in the top 25%
+    // (ridgelines, cliffs, high plateaus). Clip the editor's visible
+    // range to that top quartile and rescale the displayed score so
+    // it reads 0-100 across the *useful* window. Everything below the
+    // raw 75th percentile clamps to the curve's leftmost y (= hidden
+    // by default with LINEAR_UP), so the map highlights only the
+    // genuinely view-rich locations.
+    xRangeMin: 0.75,
+    xRangeMax: 1.0,
     formatValue: (norm) => {
-      const score = Math.round(norm * 100);
+      const score = Math.round(Math.max(0, (norm - 0.75) * 4) * 100);
       return `${score}/100`;
     },
     formatHover: (norm) => {
-      const score = Math.round(norm * 100);
+      const score = Math.round(Math.max(0, (norm - 0.75) * 4) * 100);
       let band: string;
       if (score < 5) band = 'Boxed in';
       else if (score < 25) band = 'Limited view';
@@ -874,7 +885,7 @@ const AXES: Record<string, AxisConfig> = {
     },
     description: 'How much of the surrounding landscape is visible from each spot.\nBright = sweeping panoramas. Dark = boxed in or no view at all.',
     whoIsThisFor: 'House hunters chasing a view, photographers, and anyone who values being able to see far.',
-    unitDescription: 'Score 0-100 from a global viewshed analysis. Mountain ridgelines, sea cliffs, and high plateaus rank highest. Valley floors and dense forest interiors rank lowest.',
+    unitDescription: 'Score 0-100 from a global viewshed analysis, rescaled so 0 = the global 75th percentile and 100 = the global maximum. The bottom 75% of cells (valley floors, forest interiors, plains) collapse to 0 because the useful signal is all in the top quartile -- mountain ridgelines, sea cliffs, and high plateaus rank highest.',
     source: 'alltheviews.world (Buckley-Houston, Berger, Dart)',
     sourceUrl: 'https://map.alltheviews.world/',
     hoverLabel: 'Vista',

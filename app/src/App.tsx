@@ -797,6 +797,16 @@ const AXES: Record<string, AxisConfig> = {
     dataMin: 0,
     dataMax: 200,                    // deaths per million per year, capped for color
     unit: '/M/yr',
+    // Most of the world is FAR safer than the deadliest pmtile bin, so
+    // the editor was effectively a tiny ramp at the right edge surrounded
+    // by an enormous "everywhere is bright" plateau -- the world looked
+    // binary. Clip the editor's x to start at "1 in 7k per year"
+    // (143 deaths/M/yr = 143/200 of the encoded range), so the editable
+    // range spans only the genuinely dangerous regimes. Anything safer
+    // than that gets clamped to the curve's leftmost y when the LUT is
+    // built, so it still renders bright.
+    xRangeMin: 143 / 200,
+    xRangeMax: 1,
     formatValue: (norm) => `${fmtOddsPerYear(norm * 200)}`,
     formatHover: (norm, _u, lat, lng) => {
       void loadRiskLookup();
@@ -1329,7 +1339,12 @@ const AXIS_OPTIONS: AxisOption[] = MAIN_AXIS_IDS.map((id) => {
   return {
     id,
     label: a.label,
-    hotkey: HOTKEYS[id] ?? id[0],
+    // Empty string when no real keyboard hotkey is wired -- otherwise
+    // the menu would show a fake badge based on `id[0]` and the user
+    // would think e.g. "wildfire" listens on `w` (it doesn't; `w` is
+    // water's). Sub-axes (energy / hazards) deliberately have no
+    // single-key shortcut so the main level isn't crowded out.
+    hotkey: HOTKEYS[id] ?? '',
     displayId: DISPLAY_IDS[id],
     description: a.description,
     unitDescription: a.unitDescription,
@@ -1343,7 +1358,7 @@ function _toAxisOption(id: string): AxisOption {
   return {
     id,
     label: a.label,
-    hotkey: HOTKEYS[id] ?? id[0],
+    hotkey: HOTKEYS[id] ?? '',
     displayId: DISPLAY_IDS[id],
     description: a.description,
     unitDescription: a.unitDescription,
@@ -1830,7 +1845,13 @@ export default function App() {
       for (const [axisId, points] of Object.entries(curves)) {
         if (!Array.isArray(points)) continue;
         curveStatesRef.current[axisId] = points as CurvePoint[];
-        try { updateLookupTexture(axisId, evaluateCurvePoints(points as CurvePoint[])); } catch {}
+        try {
+          const ax = AXES[axisId];
+          updateLookupTexture(
+            axisId,
+            evaluateCurvePoints(points as CurvePoint[], ax?.xRangeMin ?? 0, ax?.xRangeMax ?? 1),
+          );
+        } catch {}
         touched = true;
       }
       if (touched) {
@@ -2038,7 +2059,13 @@ export default function App() {
     if (saved?.curves) {
       for (const [axisId, points] of Object.entries(saved.curves)) {
         if (!Array.isArray(points)) continue;
-        try { updateLookupTexture(axisId, evaluateCurvePoints(points as CurvePoint[])); } catch {}
+        try {
+          const ax = AXES[axisId];
+          updateLookupTexture(
+            axisId,
+            evaluateCurvePoints(points as CurvePoint[], ax?.xRangeMin ?? 0, ax?.xRangeMax ?? 1),
+          );
+        } catch {}
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2086,7 +2113,13 @@ export default function App() {
         // for the FORMULA_OUTPUT_AXIS remap curve.
         for (const [axisId, points] of Object.entries(shared.curves)) {
           if (!Array.isArray(points)) continue;
-          try { updateLookupTexture(axisId, evaluateCurvePoints(points as CurvePoint[])); } catch {}
+          try {
+            const ax = AXES[axisId];
+            updateLookupTexture(
+              axisId,
+              evaluateCurvePoints(points as CurvePoint[], ax?.xRangeMin ?? 0, ax?.xRangeMax ?? 1),
+            );
+          } catch {}
         }
       }
       if (shared.units && typeof shared.units === 'object') {
@@ -2240,7 +2273,13 @@ export default function App() {
     },
     setCurve: (axisId: string, points: CurvePoint[]) => {
       curveStatesRef.current[axisId] = points;
-      try { updateLookupTexture(axisId, evaluateCurvePoints(points)); } catch {}
+      try {
+        const ax = AXES[axisId];
+        updateLookupTexture(
+          axisId,
+          evaluateCurvePoints(points, ax?.xRangeMin ?? 0, ax?.xRangeMax ?? 1),
+        );
+      } catch {}
       setHydrationKey((k) => k + 1);
       mapRef.current?.triggerRepaint();
     },
@@ -2801,7 +2840,9 @@ export default function App() {
             onUnitChange={handleUnitChange}
             subtitle={editorIsOutput
               ? 'composite of all formula axes'
-              : `${editorDisplayAxis} [${HOTKEYS[editorDisplayAxis]?.toUpperCase() ?? ''}]`}
+              : HOTKEYS[editorDisplayAxis]
+                ? `${editorDisplayAxis} [${HOTKEYS[editorDisplayAxis].toUpperCase()}]`
+                : editorDisplayAxis}
           />
         );
 

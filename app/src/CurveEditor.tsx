@@ -12,6 +12,21 @@ export interface AxisConfig {
   unit: string;
   formatValue: (normX: number, unit: string) => string;
   formatHover?: (normX: number, unit: string, lat?: number, lng?: number) => string;
+  /**
+   * Clip the curve editor's horizontal axis to a sub-range of the raw
+   * tile-encoded [0, 1] space. Defaults to (0, 1) -- i.e. the editor's
+   * x covers the full byte range. When provided, the editor's x=0 maps
+   * to raw norm = xRangeMin and x=1 maps to xRangeMax. Anything outside
+   * the range is clamped to the leftmost / rightmost y value when the
+   * curve is rasterized into the GPU LUT, so the corresponding bytes
+   * effectively get the "edge" treatment (typically: leftmost = bright,
+   * rightmost = dark). Useful when most cells cluster near one end of
+   * the tile encoding (e.g. Disasters, where most of the world is far
+   * safer than the deadliest pmtile bin and the editor would otherwise
+   * be a long flat plateau).
+   */
+  xRangeMin?: number;
+  xRangeMax?: number;
   unitOptions?: string[];
   description?: string;
   whoIsThisFor?: string;
@@ -80,17 +95,30 @@ function evaluateAtX(points: CurvePoint[], x: number): number {
 }
 
 // Exposed so callers (collab sync, etc.) can rasterize a peer's
-// updated curve into a GPU LUT without remounting the editor.
-export function evaluateCurvePoints(points: CurvePoint[]): Float32Array {
-  return evaluateCurve(points);
+// updated curve into a GPU LUT without remounting the editor. Pass
+// xRangeMin / xRangeMax when the axis clips its editor x to a sub-range
+// of raw tile space (defaults to the full [0, 1]).
+export function evaluateCurvePoints(
+  points: CurvePoint[],
+  xRangeMin = 0,
+  xRangeMax = 1,
+): Float32Array {
+  return evaluateCurve(points, xRangeMin, xRangeMax);
 }
 
-function evaluateCurve(points: CurvePoint[]): Float32Array {
+function evaluateCurve(points: CurvePoint[], xRangeMin = 0, xRangeMax = 1): Float32Array {
   const out = new Float32Array(256);
   const sorted = [...points].sort((a, b) => a.x - b.x);
+  const span = Math.max(1e-6, xRangeMax - xRangeMin);
 
   for (let i = 0; i < 256; i++) {
-    const x = i / 255;
+    // Raw normalized byte position in tile-encoding space.
+    const raw = i / 255;
+    // Project into the editor's [0, 1] domain. Bytes outside the editor's
+    // visible range get clamped to the curve's leftmost / rightmost y --
+    // so they behave like an extension of the closest edge instead of
+    // sliding off into evaluateAtX's out-of-range fallback.
+    const x = Math.max(0, Math.min(1, (raw - xRangeMin) / span));
     let y: number;
 
     if (sorted.length === 0) {
@@ -265,14 +293,17 @@ export function CurveEditor({
     });
   }, [displayPoints, svgW, svgH]);
 
+  const xRangeMin = axis?.xRangeMin ?? 0;
+  const xRangeMax = axis?.xRangeMax ?? 1;
+
   useEffect(() => {
-    onCurveChange(axisId, evaluateCurve(displayPoints));
+    onCurveChange(axisId, evaluateCurve(displayPoints, xRangeMin, xRangeMax));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    onCurveChange(axisId, evaluateCurve(displayPoints));
-  }, [displayPoints, axisId, onCurveChange]);
+    onCurveChange(axisId, evaluateCurve(displayPoints, xRangeMin, xRangeMax));
+  }, [displayPoints, axisId, xRangeMin, xRangeMax, onCurveChange]);
 
   useEffect(() => {
     onPointsChange?.(axisId, sortedPoints);
@@ -417,8 +448,15 @@ export function CurveEditor({
     ? { svgPt: toSvg(sortedPoints[dragIdx].x, sortedPoints[dragIdx].y, svgW, svgH), normX: sortedPoints[dragIdx].x }
     : null;
 
+  // Re-project the editor's x ∈ [0, 1] back into raw tile-encoded
+  // normalized space before asking formatValue to format it -- that
+  // function thinks in raw norms (it's also used by map hover), so
+  // editor-x must be undone via the configured xRange.
+  const tooltipRawNorm = tooltipInfo
+    ? xRangeMin + tooltipInfo.normX * (xRangeMax - xRangeMin)
+    : 0;
   const tooltipText = tooltipInfo && axis
-    ? axis.formatValue(tooltipInfo.normX, unit)
+    ? axis.formatValue(tooltipRawNorm, unit)
     : tooltipInfo
       ? `${Math.round(tooltipInfo.normX * 100)}%`
       : null;
@@ -648,7 +686,7 @@ export function CurveEditor({
               fontFamily="'SF Mono', 'Fira Code', monospace"
               textAnchor="start"
             >
-              {axis.formatValue(0, unit)}
+              {axis.formatValue(xRangeMin, unit)}
             </text>
             <text
               x={PAD_L + svgW}
@@ -658,7 +696,7 @@ export function CurveEditor({
               fontFamily="'SF Mono', 'Fira Code', monospace"
               textAnchor="end"
             >
-              {axis.formatValue(1, unit)}
+              {axis.formatValue(xRangeMax, unit)}
             </text>
             <text
               x={PAD_L + svgW / 2}

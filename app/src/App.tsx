@@ -101,9 +101,12 @@ const LINEAR_UP: CurvePoint[] = [
 const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy', 'e_consume']);
 
 // Disaster mortality lookup (deaths per million per year, per hazard, on a
-// 0.5° grid). Loaded once for hover breakdown on `risk` and the 8 individual
-// hazard axes (eq, flood, cyclone, tsunami, volcano, drought, wildfire,
-// landslide).
+// 0.5° grid). Loaded once for hover breakdown on the `risk` composite axis
+// and the two standalone hazard axes (eq, wildfire). The other six hazards
+// (flood, cyclone, tsunami, volcano, drought, landslide) still contribute to
+// the composite and to the per-hazard breakdown shown when hovering over
+// risk, but they are no longer surfaced as standalone axes -- too much
+// feature bloat for a hazard layer most users never tuned individually.
 type RiskLookup = {
   v?: number;
   res: number;          // degrees per cell
@@ -824,7 +827,7 @@ const AXES: Record<string, AxisConfig> = {
       return [headline, ...lines].join('\n');
     },
     description: 'Chance of dying from a natural disaster here.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
-    whoIsThisFor: 'Homebuyers and anyone weighing earthquake, flood, cyclone, tsunami, volcanic, drought, wildfire, and landslide exposure.',
+    whoIsThisFor: 'Homebuyers and anyone weighing combined exposure to earthquakes, floods, cyclones, tsunamis, volcanoes, droughts, wildfires, and landslides.',
     unitDescription: 'Annual probability of death, expressed as "1 in N per year". Also shown in deaths per million people per year for comparison. Reference: car crashes ~120, heart disease ~2,000, all causes ~8,000 deaths per million per year.',
     source: 'See sources panel',
     sources: [
@@ -902,101 +905,6 @@ const AXES: Record<string, AxisConfig> = {
         unitDescription: '"g" = peak ground acceleration as a fraction of gravity at the 1-in-475-year level. 0.1g = light shaking, 0.4g = strong, 1g = ground briefly moves as fast as falling.'
       },
       {
-        id: 'flood', hazardKey: 'flood', label: 'River Floods', hoverLabel: 'Depth',
-        who: 'Anyone near rivers, deltas, or low-elevation watersheds.',
-        desc: 'Maximum river-flood depth at a 1-in-100-year event.\nBright = dry. Dark = deep flooding.',
-        sources: [
-          { name: 'JRC Global River Flood Hazard, RP100 (m)', url: 'https://data.jrc.ec.europa.eu/dataset/jrc-floods-floodmapgl_rp50y-tif' },
-        ],
-        dataMax: 10.0, transform: 'sqrt',
-        unit: 'm',
-        formatNative: (m) => `${m.toFixed(1)} m`,
-        band: (m) => m < 0.1 ? 'Dry'
-                   : m < 0.5 ? 'Shallow'
-                   : m < 1.5 ? 'Knee-to-waist'
-                   : m < 3.0 ? 'Submerging'
-                              : 'Catastrophic',
-        unitDescription: 'Meters of water at a 1-in-100-year river flood. 0.5 m = ankle-deep, 1.5 m = waist, 3 m = first-floor submerged.'
-      },
-      {
-        id: 'cyclone', hazardKey: 'cyclone', label: 'Cyclones', hoverLabel: 'Wind',
-        who: 'Anyone in tropical or subtropical coastal zones (hurricane, typhoon, cyclone).',
-        desc: 'Peak wind speed at a 1-in-100-year tropical cyclone.\nBright = calm. Dark = catastrophic winds.',
-        sources: [
-          { name: 'Bloemendaal STORM 100-yr max wind (present climate, m/s)', url: 'https://data.4tu.nl/articles/dataset/STORM_climate_change_synthetic_tropical_cyclone_tracks/12706085' },
-        ],
-        dataMax: 90.0, transform: 'gamma', gamma: 0.7,
-        unit: 'mph',
-        unitOptions: ['mph', 'm/s', 'km/h'],
-        formatNative: (ms, unit) => {
-          if (unit === 'm/s') return `${Math.round(ms)} m/s`;
-          if (unit === 'km/h') return `${Math.round(ms * 3.6)} km/h`;
-          return `${Math.round(ms * 2.23694)} mph`;
-        },
-        band: (ms) => {
-          const mph = ms * 2.23694;
-          if (mph < 39)  return 'No cyclone';
-          if (mph < 74)  return 'Tropical storm';
-          if (mph < 96)  return 'Cat 1';
-          if (mph < 111) return 'Cat 2';
-          if (mph < 130) return 'Cat 3';
-          if (mph < 157) return 'Cat 4';
-          return 'Cat 5';
-        },
-        unitDescription: 'Peak sustained 10-minute wind at a 1-in-100-year cyclone. 74 mph = hurricane threshold; 157 mph = Cat 5.'
-      },
-      {
-        id: 'tsunami', hazardKey: 'tsunami', label: 'Tsunami', hoverLabel: 'Runup',
-        who: 'Anyone within ~30 km of a coastline near a subduction zone.',
-        desc: 'Coastal wave runup at a 1-in-500-year tsunami.\nBright = safe. Dark = inundating waves.',
-        sources: [
-          { name: 'Davies et al. 2017 Global PTHA (1/500-yr coastal runup, m)', url: 'https://nhess.copernicus.org/articles/18/3105/2018/' },
-        ],
-        dataMax: 10.0, transform: 'sqrt',
-        unit: 'm',
-        formatNative: (m) => `${m.toFixed(1)} m`,
-        band: (m) => m < 0.1 ? 'Negligible'
-                   : m < 0.5 ? 'Minor'
-                   : m < 2.0 ? 'Inundating'
-                   : m < 5.0 ? 'Severe'
-                              : 'Catastrophic',
-        unitDescription: 'Maximum wave runup at a 1-in-500-year tsunami. 2 m floods low-lying coasts; 5 m destroys most coastal structures.'
-      },
-      {
-        id: 'volcano', hazardKey: 'volcano', label: 'Volcanoes', hoverLabel: 'Exposure',
-        who: 'Anyone within ~30 km of a Holocene volcano with recent activity.',
-        desc: 'Proximity to active Holocene volcanoes, weighted by recent eruptions.\nBright = far from any. Dark = dense volcanic clusters.',
-        sources: [
-          { name: 'Smithsonian Global Volcanism Program (Holocene volcanoes)', url: 'https://volcano.si.edu/list_volcano_holocene.cfm' },
-        ],
-        dataMax: 8.0, transform: 'gamma', gamma: 0.4,
-        unit: 'score',
-        formatNative: (s) => `${s.toFixed(1)} score`,
-        band: (s) => s < 0.05 ? 'None'
-                   : s < 0.3  ? 'Distant'
-                   : s < 1.0  ? 'Nearby'
-                   : s < 3.0  ? 'Active zone'
-                              : 'Volcanic cluster',
-        unitDescription: 'Gaussian-smoothed exposure score (sigma ~25 km), with recent eruptions weighted 3x. Higher = more (and more recently active) volcanoes within ~50 km.'
-      },
-      {
-        id: 'drought', hazardKey: 'drought', label: 'Droughts', hoverLabel: 'Drought',
-        who: 'Anyone in arid or semi-arid agricultural regions where prolonged dry spells cause famine.',
-        desc: 'Fraction of months in severe drought (SPEI-12 < -1.5).\nBright = wet. Dark = chronically dry.',
-        sources: [
-          { name: 'SPEI-12 severe-drought frequency (1980-2006)', url: 'https://spei.csic.es/database.html' },
-        ],
-        dataMax: 0.5, transform: 'linear',
-        unit: '% months',
-        formatNative: (f) => `${(f * 100).toFixed(1)}% months`,
-        band: (f) => f < 0.02 ? 'Wet'
-                   : f < 0.05 ? 'Mild'
-                   : f < 0.10 ? 'Common'
-                   : f < 0.20 ? 'Persistent'
-                              : 'Chronic',
-        unitDescription: 'Share of months between 1980-2006 in severe drought (SPEI-12 below -1.5). 5% = 1 in 20 months; 20% = 1 in 5.'
-      },
-      {
         id: 'wildfire', hazardKey: 'wildfire', label: 'Wildfires', hoverLabel: 'Fire risk',
         who: 'Anyone in fire-prone climates (Mediterranean, western US, southern Australia).',
         desc: 'Fire-conducive months (drought + fuel proxy).\nBright = low fire risk. Dark = chronic fire weather.',
@@ -1012,23 +920,6 @@ const AXES: Record<string, AxisConfig> = {
                    : f < 0.20 ? 'High'
                               : 'Extreme',
         unitDescription: 'Share of months with drought-driven fire-prone weather, capped where there is no fuel (deserts).'
-      },
-      {
-        id: 'landslide', hazardKey: 'landslide', label: 'Landslides', hoverLabel: 'Slope',
-        who: 'Anyone living below steep slopes in heavy-rain regions.',
-        desc: 'Terrain slope from ETOPO global relief.\nBright = flat. Dark = steep.',
-        sources: [
-          { name: 'ETOPO 2022 Global Relief (5 km slope)', url: 'https://www.ncei.noaa.gov/products/etopo-global-relief-model' },
-        ],
-        dataMax: 45.0, transform: 'linear',
-        unit: '°',
-        formatNative: (deg) => `${deg.toFixed(1)}°`,
-        band: (deg) => deg < 1   ? 'Flat'
-                     : deg < 5   ? 'Gentle'
-                     : deg < 15  ? 'Hilly'
-                     : deg < 30  ? 'Steep'
-                                  : 'Cliff-like',
-        unitDescription: 'Average slope at the 5 km cell. 5° = gentle hill, 15° = ski-slope blue, 30° = ski-slope black diamond.'
       },
     ];
     const out: Record<string, AxisConfig> = {};
@@ -1260,7 +1151,7 @@ const AXES: Record<string, AxisConfig> = {
 };
 
 const ENERGY_SUB_IDS = ['e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke', 'e_hydro', 'e_wind', 'e_solar', 'e_geo'];
-const HAZARD_SUB_IDS = ['eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought', 'wildfire', 'landslide'];
+const HAZARD_SUB_IDS = ['eq', 'wildfire'];
 
 // Explicit menu / cycle order, ranked by how likely a typical user is to
 // reach for an axis when deciding where to live: practical things first
@@ -1300,18 +1191,12 @@ const DISPLAY_IDS: Record<string, string> = {
   risk: 'dis',
   inet: 'conn',
   travel: 'city',
-  // Hazard sub-axes get unique 4-letter shortcodes -- distinct from
-  // every main-axis hotkey and from each other, so the menu shows a
-  // clear short label and users can type them in the formula bar
-  // (each is added as a formulaParser alias too). Earthquakes are
-  // already short enough that the canonical id reads cleanly.
-  flood: 'flod',
-  cyclone: 'cycl',
-  tsunami: 'tsun',
-  volcano: 'volc',
-  drought: 'drgt',
+  // Hazard sub-axes get unique short codes -- distinct from every
+  // main-axis hotkey and from each other, so the menu shows a clear
+  // short label and users can type them in the formula bar (each is
+  // added as a formulaParser alias too). Earthquakes already reads
+  // cleanly as `eq`.
   wildfire: 'fire',
-  landslide: 'slid',
   eq: 'eq',
   // Energy sub-axes: the canonical id keeps the `e_` prefix because
   // the data tiles + URL shares + saved sessions already use it, but

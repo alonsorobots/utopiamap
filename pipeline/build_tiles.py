@@ -2729,13 +2729,14 @@ for _aid, (_fuels, _label, _dmax) in FUEL_AXES.items():
 # (d/M/yr) per cell.
 for _hid, _src, _max, _tx, _g in (
     ("eq",        "earthquake_intensity", 1.5,  "gamma",  0.55),  # PGA in g
-    ("flood",     "flood_intensity",      10.0, "sqrt",   0.0),   # depth in m
-    ("cyclone",   "cyclone_intensity",    90.0, "gamma",  0.7),   # wind m/s
-    ("tsunami",   "tsunami_intensity",    10.0, "sqrt",   0.0),   # runup m
-    ("volcano",   "volcano_intensity",    8.0,  "gamma",  0.4),   # density score
-    ("drought",   "drought_intensity",    0.5,  "linear", 0.0),   # freq fraction
     ("wildfire",  "wildfire_intensity",   0.4,  "linear", 0.0),   # freq fraction
-    ("landslide", "landslide_intensity",  45.0, "linear", 0.0),   # slope in degrees
+    # NOTE: The other six hazards (flood, cyclone, tsunami, volcano, drought,
+    # landslide) intentionally have no standalone axis -- they still flow into
+    # the `risk` composite via process_disasters.py and into the per-hazard
+    # hover breakdown via public/risk_lookup.json, but most users never tuned
+    # the individual layers separately, so they were retired to keep the
+    # feature list manageable. The raw intensity TIFs in data/Hazard/_out/
+    # remain on disk and are still consumed by process_disasters.py.
 ):
     PROCESSORS[_hid] = _make_disaster_processor(
         _hid, _src, hover_label=_hid.title(),

@@ -185,9 +185,11 @@ const ALL_AXES = [
   'e_hydro', 'e_wind', 'e_solar', 'e_geo',
   // Society
   'agri', 'agrip', 'pop', 'gdp', 'inet', 'hcare', 'travel', 'free',
-  // Disasters (composite + per-hazard)
-  'risk', 'eq', 'flood', 'cyclone', 'tsunami', 'volcano', 'drought',
-  'wildfire', 'landslide',
+  // Disasters: composite + the two standalone per-hazard axes we still
+  // surface (eq, wildfire). The other six hazards continue to feed the
+  // `risk` composite + per-hazard hover breakdown via risk_lookup.json,
+  // but are not exposed as standalone shader layers.
+  'risk', 'eq', 'wildfire',
   // Visual / interactive
   'vista', 'draw',
 ];

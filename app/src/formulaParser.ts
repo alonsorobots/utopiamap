@@ -73,31 +73,22 @@ export const ALIASES: Record<string, string> = {
   affordability: 'cost', cheap: 'cost', expensive: 'cost', cola: 'cost',
   pollution: 'air', smog: 'air', aqi: 'air', pm25: 'air',
   elevation: 'elev', altitude: 'elev', height: 'elev', mountain: 'elev',
-  // Disasters composite (`risk`). Only non-axis-id names land here -- the
-  // sub-hazards each have their own real axis (eq / flood / cyclone /
-  // tsunami / volcano / drought / wildfire / landslide) and the parser
-  // should let those identifiers fall through to themselves so typing
-  // "wildfire" and double-clicking it actually tunes the wildfire axis,
-  // not the composite. `dis` mirrors the short hint shown in the menu.
+  // Disasters composite (`risk`) and its two standalone sub-axes
+  // (eq, wildfire). `dis` and `fire` mirror the short hints shown in
+  // the menu. The other six hazards (flood / cyclone / tsunami /
+  // volcano / drought / landslide) no longer have standalone axes,
+  // but they still feed the `risk` composite -- so we soft-redirect
+  // every name (and the old 4-letter shortcodes) to `risk` so old
+  // URL shares with those words in the formula keep working.
   dis: 'risk', safety: 'risk', disaster: 'risk', disasters: 'risk', hazard: 'risk', hazards: 'risk',
-  // Earthquakes: the canonical axis id is `eq`, so map the full word
-  // (and its variants) onto it. The other sub-hazard names match their
-  // own canonical ids and need no entry here.
   earthquake: 'eq', earthquakes: 'eq', quake: 'eq', seismic: 'eq',
-  // Plural and synonym variants for the rest -- canonical singulars
-  // (`flood`, `cyclone`, ...) resolve via fallthrough.
-  flooding: 'flood', floods: 'flood',
-  landslides: 'landslide',
-  hurricane: 'cyclone', typhoon: 'cyclone',
   wildfires: 'wildfire', fire: 'wildfire',
-  volcanoes: 'volcano', volcanic: 'volcano',
-  droughts: 'drought',
-  tsunamis: 'tsunami',
-  // 4-letter shortcodes shown in the hamburger menu -- accepted as
-  // identifiers in the formula bar too, so typing matches what the
-  // menu hint suggests. Keep in sync with DISPLAY_IDS in App.tsx.
-  flod: 'flood', cycl: 'cyclone', tsun: 'tsunami',
-  volc: 'volcano', drgt: 'drought', slid: 'landslide',
+  flood: 'risk', flooding: 'risk', floods: 'risk', flod: 'risk',
+  cyclone: 'risk', cyclones: 'risk', hurricane: 'risk', typhoon: 'risk', cycl: 'risk',
+  tsunami: 'risk', tsunamis: 'risk', tsun: 'risk',
+  volcano: 'risk', volcanoes: 'risk', volcanic: 'risk', volc: 'risk',
+  drought: 'risk', droughts: 'risk', drgt: 'risk',
+  landslide: 'risk', landslides: 'risk', slid: 'risk',
   // `conn` mirrors the short hint shown in the hamburger menu.
   conn: 'inet', internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
   healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',

@@ -2563,6 +2563,8 @@ export default function App() {
           map={mapRef.current}
           isTouch={isTouch}
           onStrokeEnd={handleStrokeEnd}
+          onPrevAxis={() => stepAxis(-1)}
+          onNextAxis={() => stepAxis(1)}
         />
       )}
 

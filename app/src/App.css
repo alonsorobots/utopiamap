@@ -1049,6 +1049,33 @@
   transform: translate(-50%, -50%);
   box-shadow: 0 0 8px rgba(251, 146, 60, 0.3);
   background: rgba(251, 146, 60, 0.10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* When erasing we recolor the brush ring + glow so the visual matches
+ * the destructive action -- magenta-ish to echo the heatmap accent we
+ * use elsewhere for "hot" / dangerous states, distinct from the
+ * orange paint mode. Default (`.draw-cursor` alone, no add/erase
+ * class) keeps the orange treatment so the cursor still reads as
+ * "live" when the user mouses in without holding a modifier yet. */
+.draw-cursor-erase {
+  border-color: rgba(244, 114, 182, 0.9);
+  background: rgba(244, 114, 182, 0.10);
+  box-shadow: 0 0 8px rgba(244, 114, 182, 0.35);
+}
+
+.draw-cursor-symbol {
+  /* Scales with cursor size but capped so it stays legible on tiny
+   * brushes and doesn't dominate huge ones. Uses currentColor so it
+   * inherits the ring tint via the add/erase class. */
+  font-size: clamp(10px, 50%, 36px);
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.55);
+  user-select: none;
 }
 
 
@@ -1113,6 +1140,13 @@
   flex-direction: column;
   gap: 4px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.brush-panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .brush-panel-title {

@@ -16,6 +16,13 @@ interface DrawModeProps {
    *  so painting cost is bounded by user gestures rather than by
    *  brush speed. */
   onStrokeEnd?: () => void;
+  /** Optional axis-cycle callbacks. When provided, the brush panel
+   *  shows prev/next arrows in its title row -- same shortcut other
+   *  feature panels (graph editor / info) offer -- so the user can
+   *  loop back to the rest of the axes without having to open the
+   *  hamburger menu. */
+  onPrevAxis?: () => void;
+  onNextAxis?: () => void;
 }
 
 function lngLatToCell(lng: number, lat: number, level: number) {
@@ -122,7 +129,7 @@ function BrushSlider({
   );
 }
 
-export function DrawMode({ map, isTouch, onStrokeEnd }: DrawModeProps) {
+export function DrawMode({ map, isTouch, onStrokeEnd, onPrevAxis, onNextAxis }: DrawModeProps) {
   // Keep a stable ref so the effect below doesn't tear down + rebuild
   // every render just because the parent passed a fresh callback.
   const onStrokeEndRef = useRef(onStrokeEnd);
@@ -134,6 +141,11 @@ export function DrawMode({ map, isTouch, onStrokeEnd }: DrawModeProps) {
   const erasing = useRef(false);
   const lastCellKey = useRef('');
   const cursorRef = useRef<HTMLDivElement>(null);
+  // Symbol drawn inside the brush circle ("+" for paint, "-" for
+  // erase). Updated via ref so cursor tracking stays at native
+  // pointer-move speed instead of triggering a React re-render on
+  // every pixel.
+  const cursorSymbolRef = useRef<HTMLSpanElement>(null);
   const brushPxRef = useRef(brushPx);
   const touchModeRef = useRef(touchMode);
   brushPxRef.current = brushPx;
@@ -210,6 +222,25 @@ export function DrawMode({ map, isTouch, onStrokeEnd }: DrawModeProps) {
         cursorRef.current.style.left = `${e.point.x}px`;
         cursorRef.current.style.top = `${e.point.y}px`;
         canvas.style.cursor = showBrush ? 'none' : '';
+
+        // Pick the cursor mode the same way `apply()` would resolve
+        // it: an in-progress stroke wins (erase if currently erasing,
+        // paint if currently painting), otherwise read the live
+        // modifier state. ctrl/cmd outranks shift since the down-
+        // handler treats ctrlKey || metaKey as erase even if shift is
+        // also held. Class toggling drives the colored border;
+        // textContent drives the inner +/- glyph.
+        let mode: 'add' | 'erase' | null = null;
+        if (erasing.current) mode = 'erase';
+        else if (painting.current) mode = 'add';
+        else if (orig.ctrlKey || orig.metaKey) mode = 'erase';
+        else if (orig.shiftKey) mode = 'add';
+        cursorRef.current.classList.toggle('draw-cursor-add', mode === 'add');
+        cursorRef.current.classList.toggle('draw-cursor-erase', mode === 'erase');
+        if (cursorSymbolRef.current) {
+          cursorSymbolRef.current.textContent =
+            mode === 'add' ? '+' : mode === 'erase' ? '\u2212' : '';
+        }
       }
       if (painting.current || erasing.current) {
         apply(e.lngLat, erasing.current);
@@ -330,13 +361,18 @@ export function DrawMode({ map, isTouch, onStrokeEnd }: DrawModeProps) {
 
   return (
     <>
-      {/* Desktop brush cursor */}
+      {/* Desktop brush cursor. The inner span carries a "+" / "-"
+          glyph so the cursor itself signals whether a click would
+          paint or erase, instead of the user having to remember
+          which modifier they're holding. */}
       {!isTouch && (
         <div
           ref={cursorRef}
           className="draw-cursor"
           style={{ width: brushPx, height: brushPx, display: 'none' }}
-        />
+        >
+          <span ref={cursorSymbolRef} className="draw-cursor-symbol" />
+        </div>
       )}
 
       {/* Desktop tooltip */}
@@ -356,7 +392,27 @@ export function DrawMode({ map, isTouch, onStrokeEnd }: DrawModeProps) {
       )}
 
       <div className="brush-panel">
-        <div className="brush-panel-title">Brush size</div>
+        <div className="brush-panel-title-row">
+          <span className="brush-panel-title">Brush size</span>
+          {(onPrevAxis || onNextAxis) && (
+            <span className="panel-nav-arrows">
+              <button
+                className="panel-nav-btn"
+                onClick={(e) => { e.stopPropagation(); onPrevAxis?.(); }}
+                aria-label="Previous axis"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+              <button
+                className="panel-nav-btn"
+                onClick={(e) => { e.stopPropagation(); onNextAxis?.(); }}
+                aria-label="Next axis"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            </span>
+          )}
+        </div>
         <BrushSlider value={brushPx} onChange={setBrushPx} />
 
         {isTouch ? (

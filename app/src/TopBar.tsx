@@ -385,6 +385,12 @@ export function TopBar({ axes, energySubAxes, hazardSubAxes, activeAxisId, onAxi
   // formula.
   const formulaTokenFor = useCallback((a: AxisOption): string => {
     if (a.hotkey && /^[a-z]$/i.test(a.hotkey)) return a.hotkey.toLowerCase();
+    // Prefer the menu's short displayId (e.g. "fire" for wildfire,
+    // "flod" for flood) over the verbose canonical id so the formula
+    // bar reads the same way the menu hints suggest. The formula
+    // parser ALIASES table resolves these short codes back to the
+    // canonical axis id at evaluation time.
+    if (a.displayId && /^[a-z][a-z0-9_]*$/i.test(a.displayId)) return a.displayId;
     return a.id;
   }, []);
 

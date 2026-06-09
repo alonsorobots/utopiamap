@@ -93,6 +93,11 @@ export const ALIASES: Record<string, string> = {
   volcanoes: 'volcano', volcanic: 'volcano',
   droughts: 'drought',
   tsunamis: 'tsunami',
+  // 4-letter shortcodes shown in the hamburger menu -- accepted as
+  // identifiers in the formula bar too, so typing matches what the
+  // menu hint suggests. Keep in sync with DISPLAY_IDS in App.tsx.
+  flod: 'flood', cycl: 'cyclone', tsun: 'tsunami',
+  volc: 'volcano', drgt: 'drought', slid: 'landslide',
   // `conn` mirrors the short hint shown in the hamburger menu.
   conn: 'inet', internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
   healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',

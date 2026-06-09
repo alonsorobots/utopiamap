@@ -1300,6 +1300,19 @@ const DISPLAY_IDS: Record<string, string> = {
   risk: 'dis',
   inet: 'conn',
   travel: 'city',
+  // Hazard sub-axes get unique 4-letter shortcodes -- distinct from
+  // every main-axis hotkey and from each other, so the menu shows a
+  // clear short label and users can type them in the formula bar
+  // (each is added as a formulaParser alias too). Earthquakes are
+  // already short enough that the canonical id reads cleanly.
+  flood: 'flod',
+  cyclone: 'cycl',
+  tsunami: 'tsun',
+  volcano: 'volc',
+  drought: 'drgt',
+  wildfire: 'fire',
+  landslide: 'slid',
+  eq: 'eq',
 };
 
 const HOTKEYS: Record<string, string> = {
@@ -2838,11 +2851,12 @@ export default function App() {
             onPointsChange={handlePointsChange}
             savedUnit={unitStatesRef.current[editorDisplayAxis]}
             onUnitChange={handleUnitChange}
-            subtitle={editorIsOutput
-              ? 'composite of all formula axes'
-              : HOTKEYS[editorDisplayAxis]
-                ? `${editorDisplayAxis} [${HOTKEYS[editorDisplayAxis].toUpperCase()}]`
-                : editorDisplayAxis}
+            subtitle={(() => {
+              if (editorIsOutput) return 'composite of all formula axes';
+              const short = DISPLAY_IDS[editorDisplayAxis] ?? editorDisplayAxis;
+              const hk = HOTKEYS[editorDisplayAxis];
+              return hk ? `${short} [${hk.toUpperCase()}]` : short;
+            })()}
           />
         );
 

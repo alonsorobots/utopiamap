@@ -98,7 +98,7 @@ const LINEAR_UP: CurvePoint[] = [
   { x: 1, y: 0 },
 ];
 
-const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy', 'e_consume']);
+const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy']);
 
 // Disaster mortality lookup (deaths per million per year, per hazard, on a
 // 0.5° grid). Loaded once for hover breakdown on the `risk` composite axis
@@ -242,26 +242,6 @@ export function topCropsAt(axis: string, lat: number, lng: number): { name: stri
   const entry = lk.cells[`${iy}_${ix}`];
   if (!entry) return null;
   return entry.map(([idx, value]) => ({ name: lk.crops[idx], value }));
-}
-
-// Shared formatter for power-plant capacity layers (e_oil, e_coal, ...).
-// Decodes the log-scaled normalized value back to MW.
-function plantCapacityValue(norm: number, dataMax: number): number {
-  const maxLog = Math.log1p(dataMax);
-  return Math.expm1(norm * maxLog);
-}
-function plantCapacityShort(norm: number, dataMax: number): string {
-  return `${Math.round(plantCapacityValue(norm, dataMax)).toLocaleString()} MW`;
-}
-function plantCapacityHover(norm: number, dataMax: number): string {
-  const mw = plantCapacityValue(norm, dataMax);
-  let band: string;
-  if (mw < 1) band = 'None';
-  else if (mw < 50) band = 'Minor';
-  else if (mw < 500) band = 'Moderate';
-  else if (mw < 2000) band = 'Major';
-  else band = 'Heavy';
-  return `${Math.round(mw).toLocaleString()} MW (${band})`;
 }
 
 const AXES: Record<string, AxisConfig> = {
@@ -466,159 +446,6 @@ const AXES: Record<string, AxisConfig> = {
     staticYear: 2021,
     infoWidth: 308,
     infoHeight: 220
-  },
-  e_consume: {
-    label: 'Energy Consumption',
-    dataMin: 0,
-    dataMax: 15000,
-    unit: 'kWh',
-    formatValue: (norm) => `${Math.round(norm * 15000).toLocaleString()} kWh/cap`,
-    formatHover: (norm) => {
-      const k = Math.round(norm * 15000);
-      let band: string;
-      if (k < 500) band = 'Off-grid level';
-      else if (k < 2000) band = 'Low use';
-      else if (k < 6000) band = 'Modern';
-      else if (k < 10000) band = 'Industrialized';
-      else band = 'Energy-intensive';
-      return `${k.toLocaleString()} kWh/cap (${band})`;
-    },
-    description: 'How much electricity the average person uses per year.\nBright = high consumption (industrialized). Dark = low.',
-    whoIsThisFor: 'Anyone gauging how modernized or energy-intensive daily life is in a given country.',
-    unitDescription: 'kWh per person per year = roughly how many hours you could run a space heater. USA ~12,000, UK ~5,000, Nigeria ~150.',
-    source: 'World Bank',
-    sourceUrl: 'https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC',
-    hoverLabel: 'Consumption',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_oil: {
-    label: 'Oil',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where oil-burning power plants are located.\nBright = concentrated oil generation. Dark = none.',
-    whoIsThisFor: 'People tracking fossil fuel dependence or avoiding areas reliant on oil for electricity.',
-    unitDescription: 'Megawatts = how much power a plant can produce. 1 MW powers roughly 750 homes. A large oil plant is 500-2000 MW.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Oil cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_coal: {
-    label: 'Coal',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where coal power plants are located.\nBright = heavy coal dependence. Dark = none.',
-    whoIsThisFor: 'People concerned about the dirtiest fossil fuel and its impact on local air quality and climate.',
-    unitDescription: 'Megawatts = how much power a plant can produce. 1 MW powers roughly 750 homes. China and India dominate global coal capacity.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Coal cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_gas: {
-    label: 'Natural Gas',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where natural gas power plants are located.\nBright = gas-heavy grid. Dark = none.',
-    whoIsThisFor: 'People tracking the transition from coal to gas, or concerned about methane emissions.',
-    unitDescription: 'Megawatts = how much power a plant can produce. 1 MW powers roughly 750 homes. Gas is often called a "bridge fuel" between coal and renewables.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Gas cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_nuke: {
-    label: 'Nuclear',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where nuclear reactors are located.\nBright = nearby nuclear plants. Dark = none.',
-    whoIsThisFor: 'People wanting zero-carbon baseload energy nearby, or those wanting to keep distance from reactors.',
-    unitDescription: 'Megawatts = how much power a plant can produce. A single reactor is typically 500-1400 MW. France gets ~70% of its electricity from nuclear.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Nuclear cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_hydro: {
-    label: 'Hydro',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where hydroelectric dams and river plants are located.\nBright = hydro-rich. Dark = none.',
-    whoIsThisFor: 'People seeking regions powered by clean, renewable water energy or interested in dam infrastructure.',
-    unitDescription: 'Megawatts = how much power a plant can produce. Three Gorges Dam (China) is the world\'s largest at 22,500 MW. Norway gets 90%+ from hydro.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Hydro cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_wind: {
-    label: 'Wind Energy',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where wind farms are deployed for electricity.\nBright = lots of turbines. Dark = none.',
-    whoIsThisFor: 'People wanting to live near clean energy infrastructure or tracking wind energy expansion.',
-    unitDescription: 'Megawatts = how much power a farm can produce. A single modern turbine is 2-5 MW. Texas and the North Sea are global leaders.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Wind cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_solar: {
-    label: 'Solar Energy',
-    dataMin: 0,
-    dataMax: 10000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 10000),
-    formatHover: (norm) => plantCapacityHover(norm, 10000),
-    description: 'Where large solar farms are installed.\nBright = major solar capacity. Dark = none.',
-    whoIsThisFor: 'People tracking grid-scale solar adoption or wanting to live in solar-powered regions.',
-    unitDescription: 'Megawatts = how much power a farm can produce. A rooftop is ~5-10 kW; a utility farm can be 500+ MW. China and USA lead globally.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Solar cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
-  },
-  e_geo: {
-    label: 'Geothermal',
-    dataMin: 0,
-    dataMax: 5000,
-    unit: 'MW',
-    formatValue: (norm) => plantCapacityShort(norm, 5000),
-    formatHover: (norm) => plantCapacityHover(norm, 5000),
-    description: 'Where geothermal plants tap underground heat for electricity.\nBright = geothermal capacity. Dark = none.',
-    whoIsThisFor: 'People interested in volcanic-region energy or seeking places with uniquely stable, 24/7 renewable power.',
-    unitDescription: 'Megawatts = how much power a plant can produce. Found near tectonic boundaries -- Iceland, Philippines, Kenya, and New Zealand lead.',
-    source: 'WRI Global Power Plant Database',
-    sourceUrl: 'https://datasets.wri.org/dataset/globalpowerplantdatabase',
-    hoverLabel: 'Geo. cap.',
-    defaultCurve: LINEAR_UP,
-    staticYear: 2021,
   },
   agri: {
     label: 'Agriculture',
@@ -1150,7 +977,12 @@ const AXES: Record<string, AxisConfig> = {
   },
 };
 
-const ENERGY_SUB_IDS = ['e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke', 'e_hydro', 'e_wind', 'e_solar', 'e_geo'];
+// Energy generation sub-axes were retired -- per-fuel grid layers
+// (oil/coal/gas/nuke/hydro/wind/solar/geo + e_consume) cluttered the
+// menu without much real use. The country-level `energy` balance axis
+// stays and its hover tooltip still surfaces the per-fuel breakdown
+// from energy_scores.json, which is independent of the (now removed)
+// tile layers.
 const HAZARD_SUB_IDS = ['eq', 'wildfire'];
 
 // Explicit menu / cycle order, ranked by how likely a typical user is to
@@ -1174,10 +1006,7 @@ const MAIN_AXIS_IDS = [
 // order (...wind, energy, Energy..., Natural Hazards..., DRAW).
 const CYCLE_AXIS_IDS: string[] = (() => {
   const mainNoDraw = MAIN_AXIS_IDS.filter((id) => id !== 'draw');
-  const subs = [
-    ...ENERGY_SUB_IDS.filter((s) => s in AXES),
-    ...HAZARD_SUB_IDS.filter((s) => s in AXES),
-  ];
+  const subs = HAZARD_SUB_IDS.filter((s) => s in AXES);
   const tail = MAIN_AXIS_IDS.includes('draw') ? ['draw'] : [];
   return [...mainNoDraw, ...subs, ...tail];
 })();
@@ -1198,23 +1027,6 @@ const DISPLAY_IDS: Record<string, string> = {
   // cleanly as `eq`.
   wildfire: 'fire',
   eq: 'eq',
-  // Energy sub-axes: the canonical id keeps the `e_` prefix because
-  // the data tiles + URL shares + saved sessions already use it, but
-  // every user-facing surface (menu hint, formula token, curve
-  // editor title) reads the clean displayId below. Two of them have
-  // unavoidable collisions with raw-weather axes (`wind` is raw wind
-  // speed, `solar` is raw irradiance), so e_wind / e_solar use the
-  // standard industry terms instead -- `turb` for wind turbines and
-  // `pv` for solar photovoltaics.
-  e_consume: 'kwh',
-  e_oil: 'oil',
-  e_coal: 'coal',
-  e_gas: 'gas',
-  e_nuke: 'nuke',
-  e_hydro: 'hydro',
-  e_geo: 'geo',
-  e_wind: 'turb',
-  e_solar: 'pv',
 };
 
 const HOTKEYS: Record<string, string> = {
@@ -1276,7 +1088,6 @@ function _toAxisOption(id: string): AxisOption {
     sourceUrl: a.sourceUrl,
   };
 }
-const ENERGY_SUB_OPTIONS: AxisOption[] = ENERGY_SUB_IDS.map(_toAxisOption);
 const HAZARD_SUB_OPTIONS: AxisOption[] = HAZARD_SUB_IDS.map(_toAxisOption);
 
 type FreeScores = Record<string, Record<string, {
@@ -2371,8 +2182,37 @@ export default function App() {
       return;
     }
 
+    // Resolve which axis the hover should describe in native units. In
+    // single-axis mode that's just the active axis. In formula mode,
+    // a single-ident formula (e.g. "wildfire" or "fire") should still
+    // show the underlying axis's nice native-unit hover -- the
+    // shader puts the formula in formula mode for any non-empty
+    // formula string, but a lone ident is functionally identical to
+    // selecting that axis. Composite formulas (with operators or
+    // multiple idents) fall through to the generic "% match" output.
+    const formulaText = formulaRef.current;
+    const singleAxisInFormula: string | null = (() => {
+      if (!hv.isFormula || !hv.axisValues) return null;
+      const ids = Object.keys(hv.axisValues);
+      if (ids.length !== 1) return null;
+      const toks = tokenizeFormula(formulaText).filter(t => t.type !== 'space');
+      if (toks.length !== 1 || toks[0].type !== 'ident') return null;
+      return ids[0];
+    })();
+
     let text: string;
-    if (hv.isFormula) {
+    if (singleAxisInFormula) {
+      const ax = AXES[singleAxisInFormula];
+      const raw = hv.axisValues![singleAxisInFormula];
+      if (ax) {
+        const label = ax.hoverLabel ?? ax.label;
+        const fmt = ax.formatHover ?? ax.formatValue;
+        const userUnit = unitStatesRef.current[singleAxisInFormula] ?? ax.unit;
+        text = `${label}: ${fmt(raw, userUnit, lat, lng)}`;
+      } else {
+        text = `${Math.round(hv.curveValue * 100)}% match`;
+      }
+    } else if (hv.isFormula) {
       text = `${Math.round(hv.curveValue * 100)}% match`;
     } else {
       const ax = AXES[axId];
@@ -2664,7 +2504,6 @@ export default function App() {
 
       <TopBar
         axes={AXIS_OPTIONS}
-        energySubAxes={ENERGY_SUB_OPTIONS}
         hazardSubAxes={HAZARD_SUB_OPTIONS}
         activeAxisId={activeAxis}
         onAxisChange={handleAxisChange}

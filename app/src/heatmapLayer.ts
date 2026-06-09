@@ -180,9 +180,12 @@ let isPrediction = false;
 const ALL_AXES = [
   // Climate / geography
   'temp', 'tvar', 'water', 'solar', 'wind', 'air', 'elev',
-  // Energy
-  'energy', 'e_consume', 'e_oil', 'e_coal', 'e_gas', 'e_nuke',
-  'e_hydro', 'e_wind', 'e_solar', 'e_geo',
+  // Energy: just the country-level balance composite. Per-fuel grid
+  // layers (e_oil / e_coal / e_gas / e_nuke / e_hydro / e_wind /
+  // e_solar / e_geo) and the e_consume layer were retired -- their
+  // breakdown still surfaces in the `energy` axis hover tooltip from
+  // energy_scores.json.
+  'energy',
   // Society
   'agri', 'agrip', 'pop', 'gdp', 'inet', 'hcare', 'travel', 'free',
   // Disasters: composite + the two standalone per-hazard axes we still
@@ -884,6 +887,11 @@ export interface HoverValue {
   rawNorm: number;
   curveValue: number;
   isFormula: boolean;
+  // Per-axis raw normalized values (axis id -> [0,1]). Populated only
+  // in formula mode. App.tsx uses this to show the underlying axis's
+  // native-unit hover (e.g. "0.4g (Strong)") when the formula is just
+  // a single ident, instead of the generic "N% match" fallback.
+  axisValues?: Record<string, number>;
 }
 
 export function readValueAtLngLat(lng: number, lat: number): HoverValue | null {
@@ -926,6 +934,7 @@ export function readValueAtLngLat(lng: number, lat: number): HoverValue | null {
 
   // Formula mode: read each axis, apply curves, evaluate
   const fVals: Record<string, number> = {};
+  const axisValues: Record<string, number> = {};
   for (const axId of axes) {
     const key = tileDataKey(axId, z, wrappedX, tileY);
     const data = getCachedTileData(key);
@@ -933,6 +942,7 @@ export function readValueAtLngLat(lng: number, lat: number): HoverValue | null {
     const idx = (py * TILE_PX + px) * 4;
     const rawByte = data[idx];
     if (rawByte < 1) return null;
+    axisValues[axId] = rawByte / 255;
     const curve = curveEntries.get(axId);
     fVals[`f_${axId}`] = curve ? curve.data[rawByte] / 255 : rawByte / 255;
   }
@@ -945,7 +955,7 @@ export function readValueAtLngLat(lng: number, lat: number): HoverValue | null {
       expr = expr.replace(new RegExp(`\\b${name}\\b`, 'g'), val.toString());
     }
     const result = Math.max(0, Math.min(1, Function(`"use strict"; return (${expr});`)()));
-    return { rawNorm: result, curveValue: result, isFormula: true };
+    return { rawNorm: result, curveValue: result, isFormula: true, axisValues };
   } catch {
     return null;
   }

@@ -2482,113 +2482,6 @@ def process_wind():
     return out
 
 
-def _rasterize_fuel_type(axis_id: str, fuel_names: list[str], data_max: float):
-    """Rasterize WRI power plants filtered by fuel type into a PMTiles archive."""
-    import csv
-
-    wri_path = DATA / "global_power_plant_database.csv"
-    if not wri_path.exists():
-        print(f"  ERROR: {wri_path} not found")
-        return None
-
-    resolution = 0.1
-    width = int(360 / resolution)
-    height = int(180 / resolution)
-
-    grid = np.zeros((height, width), dtype=np.float64)
-    count = 0
-
-    with open(wri_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fuel = row.get("primary_fuel", "")
-            if fuel not in fuel_names:
-                continue
-            try:
-                lat = float(row["latitude"])
-                lon = float(row["longitude"])
-                cap = float(row["capacity_mw"])
-            except (ValueError, KeyError):
-                continue
-
-            xi = int((lon + 180) / resolution)
-            yi = int((90 - lat) / resolution)
-            xi = min(max(xi, 0), width - 1)
-            yi = min(max(yi, 0), height - 1)
-
-            grid[yi, xi] += cap
-            count += 1
-
-    print(f"    Rasterized {count} {'/'.join(fuel_names)} plants, total {grid.sum():,.0f} MW")
-
-    if count == 0:
-        print("    No plants found, skipping")
-        return None
-
-    transform = from_bounds(-180, -90, 180, 90, width, height)
-    profile = {
-        "driver": "GTiff", "dtype": "float32",
-        "width": width, "height": height, "count": 1,
-        "crs": "EPSG:4326", "transform": transform,
-        "nodata": 0, "compress": "deflate",
-    }
-
-    tif_path = TILES / axis_id / f"{axis_id}_raw.tif"
-    ensure_dir(tif_path.parent)
-    with rasterio.open(tif_path, "w", **profile) as dst:
-        dst.write(grid.astype(np.float32), 1)
-
-    out = full_pipeline(tif_path, axis_id, log_transform=True, data_min=0, data_max=data_max, nodata_val=0, resampling="max")
-    tif_path.unlink(missing_ok=True)
-    return out
-
-
-FUEL_AXES = {
-    "e_oil":   (["Oil", "Petcoke"],        "Oil",         10000),
-    "e_coal":  (["Coal"],                   "Coal",        10000),
-    "e_gas":   (["Gas", "Cogeneration"],    "Natural Gas", 10000),
-    "e_nuke":  (["Nuclear"],                "Nuclear",     10000),
-    "e_hydro": (["Hydro"],                  "Hydro",       10000),
-    "e_wind":  (["Wind"],                   "Wind",        10000),
-    "e_solar": (["Solar"],                  "Solar",       10000),
-    "e_geo":   (["Geothermal"],             "Geothermal",  5000),
-}
-
-
-def _make_fuel_processor(axis_id: str, fuels: list[str], label: str, data_max: float):
-    def processor():
-        print(f"\n=== ENERGY: {label.upper()} (WRI) ===")
-        return _rasterize_fuel_type(axis_id, fuels, data_max)
-    processor.__doc__ = f"WRI power plants -> {axis_id}.pmtiles ({label} capacity)"
-    return processor
-
-
-def process_e_consume():
-    """World Bank energy consumption per capita -> e_consume.pmtiles"""
-    print("\n=== ENERGY CONSUMPTION (World Bank) ===")
-    consumption_path = DATA / "energy_consumption_wb.json"
-    if not consumption_path.exists():
-        print(f"  ERROR: {consumption_path} not found")
-        return None
-
-    scores = _parse_worldbank_json(consumption_path)
-    if not scores:
-        print("  ERROR: No consumption data parsed")
-        return None
-
-    print(f"  Parsed {len(scores)} country scores")
-    balance_grid, profile = rasterize_country_data(scores, nodata=-9999)
-
-    tif_path = TILES / "e_consume" / "e_consume_raw.tif"
-    ensure_dir(tif_path.parent)
-    with rasterio.open(tif_path, "w", **profile) as dst:
-        dst.write(balance_grid.astype(np.float32), 1)
-
-    out = full_pipeline(tif_path, "e_consume", data_min=0, data_max=15000, nodata_val=-9999, resampling="nearest")
-    tif_path.unlink(missing_ok=True)
-    return out
-
-
 def process_vista():
     """alltheviews TVS (total viewshed surface) -> vista.pmtiles
 
@@ -2711,13 +2604,15 @@ PROCESSORS = {
     "agri": process_agri,
     "agrip": process_agrip,
     "wind": process_wind,
-    "e_consume": process_e_consume,
     "travel": process_travel,
     "vista": process_vista,
 }
 
-for _aid, (_fuels, _label, _dmax) in FUEL_AXES.items():
-    PROCESSORS[_aid] = _make_fuel_processor(_aid, _fuels, _label, _dmax)
+# Energy generation sub-axes (e_oil/coal/gas/nuke/hydro/wind/solar/geo)
+# and energy consumption (e_consume) were retired. The country-level
+# `energy` balance composite (process_energy) stays and still produces
+# energy.pmtiles + the per-fuel breakdown stored in energy_scores.json
+# for hover tooltips.
 
 # Individual hazards rendered in their native physical units. Each is read
 # from data/Hazard/_out/{hazard}_intensity.tif (raw, uncalibrated). The

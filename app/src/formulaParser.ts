@@ -49,7 +49,7 @@ export function tokenize(input: string): Token[] {
 //   1. Single-letter hotkeys -- keep in sync with HOTKEYS in App.tsx so
 //      any axis hotkey also works as a formula identifier (e.g. "i" -> inet).
 //   2. Natural-language aliases for users who don't know our short ids
-//      ("earthquake" -> risk, "rainfall" -> water, "nuclear" -> e_nuke).
+//      ("earthquake" -> eq, "rainfall" -> water, "warmth" -> temp).
 //
 // Lookup is case-insensitive (identifier text is lowercased before
 // querying). Add multi-char aliases liberally; they only cost a hash slot
@@ -75,20 +75,14 @@ export const ALIASES: Record<string, string> = {
   elevation: 'elev', altitude: 'elev', height: 'elev', mountain: 'elev',
   // Disasters composite (`risk`) and its two standalone sub-axes
   // (eq, wildfire). `dis` and `fire` mirror the short hints shown in
-  // the menu. The other six hazards (flood / cyclone / tsunami /
-  // volcano / drought / landslide) no longer have standalone axes,
-  // but they still feed the `risk` composite -- so we soft-redirect
-  // every name (and the old 4-letter shortcodes) to `risk` so old
-  // URL shares with those words in the formula keep working.
+  // the menu. The six other hazards (flood / cyclone / tsunami /
+  // volcano / drought / landslide) feed the composite but have no
+  // standalone axis and no alias here -- typing those words now
+  // resolves to no known axis and surfaces as a parse error, which
+  // is the desired behavior.
   dis: 'risk', safety: 'risk', disaster: 'risk', disasters: 'risk', hazard: 'risk', hazards: 'risk',
   earthquake: 'eq', earthquakes: 'eq', quake: 'eq', seismic: 'eq',
   wildfires: 'wildfire', fire: 'wildfire',
-  flood: 'risk', flooding: 'risk', floods: 'risk', flod: 'risk',
-  cyclone: 'risk', cyclones: 'risk', hurricane: 'risk', typhoon: 'risk', cycl: 'risk',
-  tsunami: 'risk', tsunamis: 'risk', tsun: 'risk',
-  volcano: 'risk', volcanoes: 'risk', volcanic: 'risk', volc: 'risk',
-  drought: 'risk', droughts: 'risk', drgt: 'risk',
-  landslide: 'risk', landslides: 'risk', slid: 'risk',
   // `conn` mirrors the short hint shown in the hamburger menu.
   conn: 'inet', internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
   healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',
@@ -96,21 +90,9 @@ export const ALIASES: Record<string, string> = {
   freedom: 'free', democracy: 'free', liberty: 'free', corruption: 'free',
   agriculture: 'agri', farming: 'agri', cropland: 'agri', farms: 'agri',
   suitability: 'agrip', potential: 'agrip',
-  // Energy sub-axes. Canonical axis ids keep the `e_` prefix (used by
-  // the tile filenames + URL shares + saved sessions), but the menu
-  // shows clean short displayIds and the parser accepts them here so
-  // typing matches the menu hint. `wind` and `solar` are taken by
-  // raw-weather axes, so the power versions use the industry terms
-  // `turb` (turbine) and `pv` (photovoltaic).
-  oil: 'e_oil', petroleum: 'e_oil', gasoline: 'e_oil',
-  coal: 'e_coal',
-  gas: 'e_gas', natgas: 'e_gas', methane: 'e_gas',
-  nuclear: 'e_nuke', nuke: 'e_nuke', reactor: 'e_nuke', uranium: 'e_nuke',
-  hydro: 'e_hydro', dam: 'e_hydro', hydroelectric: 'e_hydro',
-  turb: 'e_wind', windfarm: 'e_wind', windenergy: 'e_wind', turbine: 'e_wind',
-  pv: 'e_solar', solarfarm: 'e_solar', solarenergy: 'e_solar', photovoltaic: 'e_solar',
-  geo: 'e_geo', geothermal: 'e_geo',
-  consumption: 'e_consume', usage: 'e_consume', kwh: 'e_consume',
+  // Per-fuel grid layers (oil/coal/gas/nuke/hydro/wind/solar/geo) and
+  // the energy-consumption layer were retired. No aliases here -- the
+  // country-level `energy` balance axis is the only remaining surface.
   // Vista
   view: 'vista', scenery: 'vista', landscape: 'vista', terrain: 'vista',
 };

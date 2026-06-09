@@ -74,8 +74,8 @@ surface areas)
 - **Source**: https://globalwindatlas.info
 
 ### WRI Global Power Plant Database
-- **Used for**: Energy (`energy`) and per-fuel breakdowns (`e_coal`, `e_gas`,
-  `e_geo`, `e_hydro`, `e_nuke`, `e_oil`, `e_solar`, `e_wind`).
+- **Used for**: Energy (`energy`) -- country-level balance composite plus the
+  per-fuel breakdown surfaced in the axis hover tooltip via energy_scores.json.
 - **License**: Data CC BY 4.0; code MIT.
 - **Citation**:
   - Byers, L. et al. (2021). *Global Power Plant Database v1.3.0.* World

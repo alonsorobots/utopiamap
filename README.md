@@ -48,7 +48,7 @@ permalinks encode the full session in the URL hash.
 | **Healthcare**          | `h`    | Travel time to nearest healthcare facility | [Malaria Atlas Project](https://malariaatlas.org)                                                                                                 | ~1 km             | 2019                     |
 | **Internet**            | `i`    | Fixed broadband download speed             | [Ookla Speedtest Open Data](https://github.com/teamookla/ookla-open-data)                                                                         | ~600 m tiles      | Quarterly                |
 | **Freedom**             | `f`    | Composite of CPI + Freedom House FIW       | [Transparency Intl](https://www.transparency.org) + [Freedom House](https://freedomhouse.org)                                                     | Country-level     | Annual                   |
-| **Travel time to city** | `r`    | Travel time to nearest urban center        | derived from MAP friction surface                                                                                                                 | 1 km              | 2019                     |
+| **City**                | `m`    | Travel time to nearest 20k+ settlement     | [Nelson et al. 2019](https://doi.org/10.6084/m9.figshare.7638134.v3) (figshare)                                                                    | 1 km              | 2015                     |
 | **Draw**                | `d`    | User-painted mask                          | (local)                                                                                                                                           | Adaptive quadtree | N/A                      |
 
 
@@ -78,7 +78,7 @@ patterns:
   - `t * w` — both warm and wet (multiplication is logical AND-ish).
   - `t + w` — warm or wet (addition is OR-ish).
   - `t / p` — warm divided by population (penalizes density).
-  - `(t * w * a) / r` — warm, wet, agriculturally suitable, far from cities.
+  - `(t * w * a) / m` — warm, wet, agriculturally suitable, far from cities.
 - **Draw mask** — paint regions to include or exclude. Works as `d` in
 formulas, e.g. `t * d` clips temperature to your painted area.
 - **Time scrubber** — slide through historical years and switch between SSP

@@ -28,6 +28,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_bounds
 from rasterio.enums import Resampling
+from rasterio.windows import Window
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -2505,14 +2506,108 @@ def process_vista():
     return out
 
 
-def process_travel():
-    """Travel time to closest city -> travel.pmtiles"""
-    print("\n=== TRAVEL TIME TO CITY (Weiss et al / Figshare) ===")
+# Nelson (2019) ships one raster per city-size class, each holding the travel time
+# to the nearest city *within that population band only*. Classes 1-7 span
+# 20,000 to 50,000,000 people, so the per-pixel minimum over them is the travel
+# time to the nearest city of at least 20k -- which is what the "City" axis means.
+# Using any single class produces a band artefact: class 2 (1M-5M) alone reports
+# Madrid as remote, because Madrid itself is >5M and so is absent from that layer.
+TRAVEL_CITY_CLASSES = {
+    1: "5,000,000-50,000,000",
+    2: "1,000,000-5,000,000",
+    3: "500,000-1,000,000",
+    4: "200,000-500,000",
+    5: "100,000-200,000",
+    6: "50,000-100,000",
+    7: "20,000-50,000",
+}
+TRAVEL_MIN_CITY_POP = 20_000
+TRAVEL_CAP_MIN = 720
 
-    tif = DATA / "Travel" / "travel_time_to_cities_2.tif"
-    if not tif.exists():
-        print(f"  ERROR: {tif} not found")
-        print("  Please download into data/Travel/")
+
+def _stored_nodata(ds) -> float | None:
+    """Nodata value as pixels actually read back.
+
+    The Nelson rasters are UInt16 but declare nodata as -1, which reads back as
+    65535, so a naive comparison against the declared value never matches.
+    """
+    nd = ds.nodata
+    if nd is None:
+        return None
+    dt = np.dtype(ds.dtypes[0])
+    if dt.kind == "u" and nd < 0:
+        return float(nd + 2 ** (dt.itemsize * 8))
+    return float(nd)
+
+
+def min_across_rasters(srcs: list[Path], dst: Path, nodata_val: float) -> Path:
+    """Per-pixel minimum across identically-gridded rasters, ignoring nodata.
+
+    Output keeps the grid, dtype and nodata value of the first input so the rest
+    of the pipeline can treat the result like any other source raster.
+    """
+    print(f"  Reducing {len(srcs)} rasters to a per-pixel minimum...")
+
+    with rasterio.open(srcs[0]) as ref:
+        profile = ref.profile.copy()
+        ref_shape = (ref.height, ref.width)
+        ref_transform = ref.transform
+
+    for s in srcs[1:]:
+        with rasterio.open(s) as chk:
+            if (chk.height, chk.width) != ref_shape or chk.transform != ref_transform:
+                raise ValueError(f"{s.name} grid does not match {srcs[0].name}")
+
+    # Source rasters are striped (one row per block); retile so the block shape is
+    # a legal multiple of 16 and downstream reads are not row-at-a-time.
+    profile.update(compress="deflate", tiled=True, blockxsize=512, blockysize=512,
+                   nodata=nodata_val)
+
+    handles = [rasterio.open(s) for s in srcs]
+    try:
+        with rasterio.open(dst, "w", **profile) as out:
+            # Stream in row blocks; a full 30 arc-second global band is ~3 GB float32.
+            block_rows = 512
+            for row0 in range(0, ref_shape[0], block_rows):
+                nrows = min(block_rows, ref_shape[0] - row0)
+                window = Window(0, row0, ref_shape[1], nrows)
+
+                acc = None
+                for h in handles:
+                    arr = h.read(1, window=window).astype(np.float32)
+                    nd = _stored_nodata(h)
+                    if nd is not None:
+                        arr = np.where(np.isclose(arr, nd, atol=0.1), np.inf, arr)
+                    arr = np.where(np.isfinite(arr), arr, np.inf)
+                    acc = arr if acc is None else np.minimum(acc, arr)
+
+                # Pixels unreachable in every class (ocean, Antarctica) stay nodata.
+                acc = np.where(np.isinf(acc), nodata_val, acc)
+                out.write(acc.astype(profile["dtype"]), 1, window=window)
+
+                if (row0 // block_rows) % 8 == 0:
+                    print(f"    rows {row0}/{ref_shape[0]}")
+    finally:
+        for h in handles:
+            h.close()
+
+    print(f"  Min raster -> {dst.name}")
+    return dst
+
+
+def process_travel():
+    """Travel time to the nearest city of 20k+ people -> travel.pmtiles"""
+    print("\n=== TRAVEL TIME TO CITY 20k+ (Nelson et al. 2019 / Figshare) ===")
+
+    src_dir = DATA / "Travel"
+    tifs = [src_dir / f"travel_time_to_cities_{n}.tif" for n in sorted(TRAVEL_CITY_CLASSES)]
+    missing = [t for t in tifs if not t.exists()]
+    if missing:
+        print(f"  ERROR: {len(missing)} of {len(tifs)} city-class rasters not found in {src_dir}")
+        for t in missing:
+            print(f"    missing {t.name}  (class {TRAVEL_CITY_CLASSES[int(t.stem.rsplit('_', 1)[1])]} people)")
+        print("  Download travel_time_to_cities_1..7.tif from")
+        print("  https://figshare.com/articles/dataset/Travel_time_to_cities_and_ports_in_the_year_2015/7638134")
         return None
 
     out_path = TILES / "travel" / "travel.pmtiles"
@@ -2521,18 +2616,27 @@ def process_travel():
         return out_path
 
     ensure_dir(TILES / "travel")
+    merged = TILES / "travel" / "travel_min_20k.tif"
     downsampled = TILES / "travel" / "travel_downsampled.tif"
 
-    print("  Step 0: Downsample 1km -> ~1km using gdalwarp...")
+    print(f"  Step 0: Combine classes 1-7 (cities >= {TRAVEL_MIN_CITY_POP:,} people)...")
+    for n, label in sorted(TRAVEL_CITY_CLASSES.items()):
+        print(f"    class {n}: {label} people")
+    min_across_rasters(tifs, merged, nodata_val=65535)
+
+    print("  Step 1: Downsample 1km -> ~1km using gdalwarp...")
     run([
         "gdalwarp",
         "-tr", "0.010416667", "0.010416667",
         "-r", "average",
+        "-srcnodata", "65535",
+        "-dstnodata", "65535",
         "-co", "COMPRESS=DEFLATE",
         "-overwrite",
-        str(tif),
+        str(merged),
         str(downsampled),
     ])
+    merged.unlink(missing_ok=True)
 
     masked = TILES / "travel" / "travel_land_only.tif"
     final_tif = apply_ocean_mask(downsampled, masked, nodata_val=65535)
@@ -2541,7 +2645,8 @@ def process_travel():
         downsampled = final_tif
 
     # Invert so 0 minutes (closest) is 255 (bright). Cap at 720 minutes (12 hours).
-    out = full_pipeline(downsampled, "travel", data_min=0, data_max=720, invert=True, nodata_val=65535, max_zoom=7)
+    out = full_pipeline(downsampled, "travel", data_min=0, data_max=TRAVEL_CAP_MIN, invert=True,
+                        nodata_val=65535, max_zoom=7)
     downsampled.unlink(missing_ok=True)
     return out
 

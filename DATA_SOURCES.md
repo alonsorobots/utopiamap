@@ -21,7 +21,7 @@ citation we ask users to include in any derivative work.
 | Healthcare | Malaria Atlas Project | CC BY 3.0 | Cite Weiss et al. 2020 |
 | Internet | Ookla Speedtest Open Data | CC BY-NC-SA 4.0 | Attribute Ookla; non-commercial |
 | Freedom | Transparency Intl CPI + Freedom House FIW | CC BY 4.0 + free for academic | Attribute both |
-| Travel time to city | derived from MAP friction surface | CC BY 4.0 | Cite Weiss et al. 2018 |
+| City (travel time to 20k+ settlement) | Nelson et al. 2019 (figshare) | CC BY 4.0 | Cite Nelson et al. 2019 |
 
 ---
 
@@ -154,14 +154,27 @@ surface areas)
 - **Source**: https://drmkc.jrc.ec.europa.eu/inform-index/
 
 ### Malaria Atlas Project (MAP)
-- **Used for**: Healthcare (`hcare`), Travel time to city (`travel`).
+- **Used for**: Healthcare (`hcare`).
 - **License**: CC BY 3.0.
 - **Citation**:
   - Weiss, D.J. et al. (2020). *Global maps of travel time to healthcare
     facilities.* Nature Medicine 26, 1835–1838.
-  - Weiss, D.J. et al. (2018). *A global map of travel time to cities to
-    assess inequalities in accessibility in 2015.* Nature 553, 333–336.
 - **Source**: https://malariaatlas.org
+
+### Travel time to cities and ports (Nelson 2019)
+- **Used for**: City (`travel`).
+- **License**: CC BY 4.0.
+- **Citation**:
+  - Nelson, A. (2019). *Travel time to cities and ports in the year 2015.*
+    figshare. https://doi.org/10.6084/m9.figshare.7638134.v3
+  - Nelson, A., Weiss, D.J., van Etten, J., Cattaneo, A., McMenomy, T.S. &
+    Koo, J. (2019). *A suite of global accessibility indicators.*
+    Scientific Data 6, 266. https://doi.org/10.1038/s41597-019-0265-5
+- **Note**: The dataset ships one raster per city-size class. The `travel`
+  axis is the per-pixel minimum over classes 1–7, i.e. travel time to the
+  nearest settlement of 20,000 people or more. Any single class on its own
+  measures only that population band and misreports cities outside it.
+- **Source**: https://figshare.com/articles/dataset/Travel_time_to_cities_and_ports_in_the_year_2015/7638134
 
 ### Ookla Speedtest Open Data
 - **Used for**: Internet (`inet`).

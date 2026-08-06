@@ -28,7 +28,20 @@ export interface AxisConfig {
   xRangeMin?: number;
   xRangeMax?: number;
   unitOptions?: string[];
+  /**
+   * What the underlying dataset measures. Must stay neutral about how the
+   * map looks: brightness is produced by the curve, not by the data, so a
+   * "bright = X" claim here goes stale the moment the user drags a point
+   * (or holds `raw`). Put appearance claims in defaultPreference instead.
+   */
   description?: string;
+  /**
+   * What the shipped defaultCurve highlights, rendered under a "Default
+   * curve:" heading so the claim is explicitly scoped to that curve.
+   * Keep this in sync with defaultCurve -- it is the only place allowed
+   * to talk about what is bright or hidden.
+   */
+  defaultPreference?: string;
   whoIsThisFor?: string;
   unitDescription?: string;
   source?: string;

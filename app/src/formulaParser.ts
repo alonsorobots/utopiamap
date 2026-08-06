@@ -44,7 +44,9 @@ export function tokenize(input: string): Token[] {
 //
 // Every alias here resolves to a real axis id at parse time, which means
 // the formula bar's autocomplete can safely suggest any of these words --
-// hitting Tab won't produce an "unknown identifier" error. Two flavours:
+// hitting Tab won't produce an "unknown identifier" error. (Retired names
+// listed in HIDDEN_ALIASES still parse but are never suggested.) Two
+// flavours:
 //
 //   1. Single-letter hotkeys -- keep in sync with HOTKEYS in App.tsx so
 //      any axis hotkey also works as a formula identifier (e.g. "i" -> inet).
@@ -83,8 +85,11 @@ export const ALIASES: Record<string, string> = {
   dis: 'risk', safety: 'risk', disaster: 'risk', disasters: 'risk', hazard: 'risk', hazards: 'risk',
   earthquake: 'eq', earthquakes: 'eq', quake: 'eq', seismic: 'eq',
   wildfires: 'wildfire', fire: 'wildfire',
-  // `conn` mirrors the short hint shown in the hamburger menu.
-  conn: 'inet', internet: 'inet', connectivity: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
+  // `conn` / `connectivity` are the retired name for this axis (now
+  // "Internet speed"); kept so older shared formulas parse, but hidden
+  // from autocomplete via HIDDEN_ALIASES below.
+  conn: 'inet', connectivity: 'inet',
+  internet: 'inet', wifi: 'inet', broadband: 'inet', bandwidth: 'inet',
   healthcare: 'hcare', health: 'hcare', hospital: 'hcare', medical: 'hcare', clinic: 'hcare',
   remoteness: 'travel', urban: 'travel', city: 'travel', wilderness: 'travel',
   freedom: 'free', democracy: 'free', liberty: 'free', corruption: 'free',
@@ -108,7 +113,13 @@ export function resolveAxisAlias(text: string): string {
 //
 // One flat array, ranked by likely-use. Building it here (rather than in
 // FormulaBar) keeps the parser as the single source of truth: any alias
-// the parser accepts is a valid completion, and vice-versa.
+// the parser accepts is a valid completion, except for the retired names
+// below.
+
+// Aliases the parser still resolves but autocomplete never offers. These
+// exist only so formulas written under an older name keep working --
+// suggesting them would teach the old vocabulary back to new users.
+const HIDDEN_ALIASES = new Set(['conn', 'connectivity']);
 
 export interface Completion {
   word: string;       // exactly what gets inserted on Tab (always lowercase)
@@ -130,6 +141,7 @@ export function buildCompletionIndex(axisOrder: string[]): Completion[] {
   for (const [alias, axisId] of Object.entries(ALIASES)) {
     if (alias.length <= 1) continue;
     if (alias === axisId) continue;
+    if (HIDDEN_ALIASES.has(alias)) continue;
     const base = order.get(axisId);
     const priority = axisOrder.length + (base ?? axisOrder.length);
     entries.push({ word: alias, resolved: axisId, priority });

@@ -1516,6 +1516,14 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
+.axis-detail-default {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.axis-detail-default strong {
+  color: rgba(200, 180, 130, 0.85);
+}
+
 .axis-detail-units {
   color: rgba(255, 255, 255, 0.5);
   font-style: italic;

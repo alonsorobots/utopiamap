@@ -98,6 +98,14 @@ const LINEAR_UP: CurvePoint[] = [
   { x: 1, y: 0 },
 ];
 
+// For axes whose raw value is a hazard rather than a benefit (high =
+// worse), so low values are the preferred/bright end. See the polarity
+// note on `risk` for why the LUT's y is inverted relative to brightness.
+const LINEAR_DOWN: CurvePoint[] = [
+  { x: 0, y: 0 },
+  { x: 1, y: 1 },
+];
+
 const COUNTRY_AXES = new Set(['gdp', 'free', 'inet', 'energy']);
 
 // Disaster mortality lookup (deaths per million per year, per hazard, on a
@@ -268,7 +276,8 @@ const AXES: Record<string, AxisConfig> = {
       return `${v} (${band})`;
     },
     unitOptions: ['C', 'F'],
-    description: 'How warm or cold a place typically feels across the year.\nBright = warm. Dark = cold.',
+    description: 'How warm or cold a place typically feels across the year.',
+    defaultPreference: 'Highlights the mild 15-25C band; both freezing and scorching places are dimmed.',
     whoIsThisFor: 'Anyone choosing a climate -- escaping harsh winters, avoiding extreme heat, or finding year-round comfort.',
     unitDescription: 'Degrees = how hot or cold the air feels on a typical day. San Francisco ~14C, Bangkok ~28C, Moscow ~6C.',
     source: 'TerraClimate (University of Idaho)',
@@ -281,7 +290,7 @@ const AXES: Record<string, AxisConfig> = {
       { x: 0.867, y: 1 },
     ],
     infoWidth: 304,
-    infoHeight: 167
+    infoHeight: 190
   },
   tvar: {
     label: 'Temp Volatility',
@@ -304,7 +313,8 @@ const AXES: Record<string, AxisConfig> = {
       return `${v} (${band})`;
     },
     unitOptions: ['C', 'F'],
-    description: 'How much the temperature swings between seasons.\nBright = steady year-round. Dark = big swings between summer and winter.',
+    description: 'How much the temperature swings between seasons. Higher means a bigger gap between summer and winter.',
+    defaultPreference: 'Highlights steady year-round climates under ~6C of swing; places above ~12C fade out.',
     whoIsThisFor: 'People who want consistent weather (low swing) or who love distinct four seasons (high swing).',
     unitDescription: 'Standard deviation = how far the monthly average wanders from the yearly average. Hawaii ~2C (barely changes), Chicago ~12C (brutal winters, hot summers).',
     source: 'TerraClimate (University of Idaho)',
@@ -315,7 +325,7 @@ const AXES: Record<string, AxisConfig> = {
       { x: 0.8, y: 1 },
     ],
     infoWidth: 304,
-    infoHeight: 199
+    infoHeight: 207
   },
   water: {
     label: 'Water',
@@ -333,7 +343,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Tropical';
       return `${mm} mm/yr (${band})`;
     },
-    description: 'How much rain falls in a year.\nBright = wet and green. Dark = dry and arid.',
+    description: 'How much rain falls in a year.',
+    defaultPreference: 'Highlights the temperate 900-1400 mm band; deserts are hidden and monsoon-soaked tropics taper back down.',
     whoIsThisFor: 'Farmers, homesteaders, or anyone who cares about water security and lush green surroundings vs dry desert.',
     unitDescription: 'Millimeters of rain per year = if you collected all the rain in a bucket, how deep it would be. Sahara ~25 mm, London ~600 mm, Amazon ~2500 mm.',
     source: 'TerraClimate precipitation data',
@@ -360,7 +371,7 @@ const AXES: Record<string, AxisConfig> = {
       { x: 1,           y: 0.65 }, // tropical monsoon -- less preferred
     ],
     infoWidth: 304,
-    infoHeight: 185
+    infoHeight: 223
   },
   solar: {
     label: 'Solar',
@@ -377,7 +388,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Brilliant';
       return `${k} kWh/m2/yr (${band})`;
     },
-    description: 'How much sunlight hits the ground in a year.\nBright = sunny. Dark = cloudy.',
+    description: 'How much sunlight hits the ground in a year.',
+    defaultPreference: 'Brightens steadily with more sun; the cloudiest places are hidden.',
     whoIsThisFor: 'People wanting solar panels, sunny weather, or to avoid seasonal depression from dark winters.',
     unitDescription: 'kWh/m2/yr = the energy a 1-meter-square solar panel could capture in a year. UK ~900, Spain ~1800, Sahara ~2400.',
     source: 'Global Solar Atlas (World Bank / Solargis)',
@@ -398,8 +410,8 @@ const AXES: Record<string, AxisConfig> = {
     // signal sits in the 0-15 m/s window. Clip the editor's visible
     // x to that range so the curve has resolution where it matters.
     // Cells above 15 m/s still render (they clamp to the curve's
-    // rightmost y -- bright with LINEAR_UP for kite surfers /
-    // turbines, hidden for the calm-loving default).
+    // rightmost y -- bright under the default, which favours turbines
+    // and kite surfers; invert the curve to hide them and hunt calm).
     xRangeMin: 0,
     xRangeMax: 15 / 20,
     formatValue: (norm) => `${(norm * 20).toFixed(1)} m/s`,
@@ -413,7 +425,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Gale-prone';
       return `${v.toFixed(1)} m/s (${band})`;
     },
-    description: 'How windy a place is on average.\nBright = windy. Dark = calm.',
+    description: 'How windy a place is on average.',
+    defaultPreference: 'Highlights windy places from ~10 m/s up; calm air below ~5.5 m/s is hidden. Flip the curve if you want shelter instead.',
     whoIsThisFor: 'Wind energy prospectors, people wanting to avoid constantly blustery areas, or kite surfers.',
     unitDescription: 'Meters per second = how fast the air moves. Walking pace ~1.5, gentle breeze ~5, strong wind ~10, dangerous gale ~15+.',
     source: 'Global Wind Atlas / ERA5',
@@ -427,7 +440,7 @@ const AXES: Record<string, AxisConfig> = {
     ],
     staticYear: 2020,
     infoWidth: 305,
-    infoHeight: 166
+    infoHeight: 207
   },
   energy: {
     label: 'Energy Balance',
@@ -447,7 +460,8 @@ const AXES: Record<string, AxisConfig> = {
       if (net < -5) return `${net} (Net importer)`;
       return `${net >= 0 ? '+' : ''}${net} (Balanced)`;
     },
-    description: 'Does a country produce more energy than it uses, or less?\nBright = net exporter. Dark = net importer.',
+    description: 'Does a country produce more energy than it uses, or less?',
+    defaultPreference: 'Brightens steadily toward net exporters; importers are hidden.',
     whoIsThisFor: 'People concerned about grid reliability, energy independence, or living in a self-sufficient country.',
     unitDescription: 'Score out of 100. 50 = balanced. Above 50 = the country exports surplus energy. Below 50 = it depends on imports. Norway ~85 (oil exporter), Japan ~25 (heavy importer).',
     source: 'WRI Global Power Plant Database / World Bank',
@@ -474,7 +488,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Breadbasket';
       return `${ai} Activity Index (${band})`;
     },
-    description: 'Where crops are actually grown today, blending climate, soil, terrain, and human factors.\nBright = active farmland. Dark = little or no crop production.',
+    description: 'Where crops are actually grown today, blending climate, soil, terrain, and human factors.',
+    defaultPreference: 'Brightens steadily with crop activity; land with little or no production is hidden.',
     whoIsThisFor: 'Homesteaders, farmers, or anyone who values local food security and access to fresh produce.',
     unitDescription: 'Activity index from 0-100, log-scaled from harvested-area density (hectares per ~9 km cell). Iowa corn belt ~95, Swiss Alps ~10, Sahara 0. Hover to see the top crops grown locally.',
     source: 'IFPRI MapSPAM 2020 v2 (46 crops, harvested area)',
@@ -483,7 +498,7 @@ const AXES: Record<string, AxisConfig> = {
     staticYear: 2020,
     defaultCurve: LINEAR_UP,
     infoWidth: 322,
-    infoHeight: 200
+    infoHeight: 207
   },
   agrip: {
     label: 'Agriculture Potential',
@@ -501,7 +516,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Prime';
       return `${si} SI (${band})`;
     },
-    description: 'Where crops could grow based on climate, soil, and terrain -- today and projected to 2100.\nBright = high biophysical potential. Dark = unsuitable for farming.',
+    description: 'Where crops could grow based on climate, soil, and terrain -- today and projected to 2100.',
+    defaultPreference: 'Brightens steadily with biophysical potential; land unsuitable for farming is hidden.',
     whoIsThisFor: 'Long-term planners, climate-aware homesteaders, and anyone curious how warming will reshape the world\'s breadbaskets.',
     unitDescription: 'Suitability index from 0-100 across 23 major crops, picking the best fit per place. US Midwest ~85, Sahel ~20, polar deserts 0. Scrub past today to see high-emissions (SSP5-8.5) climate projections; hover to see the top crops.',
     source: 'Zabel et al. 2014 -- Global Agricultural Suitability v3 (LMU Munich)',
@@ -509,7 +525,7 @@ const AXES: Record<string, AxisConfig> = {
     hoverLabel: 'Crop suitability',
     defaultCurve: LINEAR_UP,
     infoWidth: 332,
-    infoHeight: 215
+    infoHeight: 255
   },
   pop: {
     label: 'Population',
@@ -532,7 +548,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Dense city';
       return `${Math.round(val).toLocaleString()}/km2 (${band})`;
     },
-    description: 'How many people live in each square kilometer.\nBright = dense cities. Dark = empty wilderness.',
+    description: 'How many people live in each square kilometer.',
+    defaultPreference: 'Brightens steadily with density, peaking in dense cities; empty wilderness is hidden. Flip the curve to hunt for solitude.',
     whoIsThisFor: 'People who feel safest surrounded by millions, and people who feel safest surrounded by no one.',
     unitDescription: 'People per km2 = imagine a square 1 km on each side. Rural farmland ~10, typical suburb ~1,000, Manhattan ~28,000.',
     source: 'SEDAC GPWv4 (NASA / Columbia University)',
@@ -540,7 +557,7 @@ const AXES: Record<string, AxisConfig> = {
     hoverLabel: 'Pop. density',
     defaultCurve: LINEAR_UP,
     infoWidth: 305,
-    infoHeight: 168
+    infoHeight: 223
   },
   gdp: {
     label: 'GDP per capita',
@@ -563,7 +580,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Wealthy';
       return `$${Math.round(val).toLocaleString()} (${band})`;
     },
-    description: 'How much economic output each person produces locally. Hover changes with zoom: country (World Bank), state/province (pop-weighted), or district (Kummu admin-2).\nBright = wealthy area. Dark = poor area.',
+    description: 'How much economic output each person produces locally. Hover changes with zoom: country (World Bank), state/province (pop-weighted), or district (Kummu admin-2).',
+    defaultPreference: 'Brightens steadily with local output; the poorest areas are hidden.',
     whoIsThisFor: 'Anyone wanting to understand the true local economy -- not just the country average, but your actual region or neighborhood.',
     unitDescription: 'PPP dollars = what a dollar actually buys locally (adjusted for prices). Country tier: WB constant 2021 intl $; State and District tiers: Kummu et al. admin-2 (calibrated to WB country totals).',
     source: 'Kummu et al. gridded GDP (admin-2, 1990-2024) + World Bank NY.GDP.PCAP.PP.KD',
@@ -571,7 +589,7 @@ const AXES: Record<string, AxisConfig> = {
     hoverLabel: 'GDP/capita',
     defaultCurve: LINEAR_UP,
     infoWidth: 306,
-    infoHeight: 200
+    infoHeight: 288
   },
   air: {
     label: 'Air Quality',
@@ -588,7 +606,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Poor';
       return `${pm25} ug/m3 (${band})`;
     },
-    description: 'How clean the air is where you live.\nBright = clean air. Dark = heavy smog.',
+    description: 'How clean the air is where you live.',
+    defaultPreference: 'Highlights air cleaner than ~20 ug/m3; anything dirtier than ~35 ug/m3 is hidden.',
     whoIsThisFor: 'Parents, asthmatics, or anyone wanting to avoid long-term health damage from breathing polluted air.',
     unitDescription: 'PM2.5 = tiny particles at least 30x smaller than a human hair that lodge deep in your lungs. WHO safe limit is 5. Most of Europe ~10, Delhi can hit 200+.',
     source: 'WashU Atmospheric Composition Group (V6)',
@@ -599,7 +618,7 @@ const AXES: Record<string, AxisConfig> = {
       { x: 0.714, y: 0 },
     ],
     infoWidth: 300,
-    infoHeight: 183
+    infoHeight: 207
   },
   elev: {
     label: 'Elevation',
@@ -618,7 +637,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Thin air';
       return `${m} m (${band})`;
     },
-    description: 'Height above sea level.\nBright = high mountains. Dark = lowlands and coast.',
+    description: 'Height above sea level.',
+    defaultPreference: 'Highlights coast, lowlands and hills up to ~1500 m; thin air above ~3000 m is hidden. Flip the curve if you are chasing altitude.',
     whoIsThisFor: 'Mountaineers, altitude trainers, or people wanting to avoid altitude sickness and thin air.',
     unitDescription: 'Meters above sea level. Sea level = 0, Denver = 1,600, Mexico City = 2,200, Everest base camp = 5,400.',
     source: 'ETOPO 2022 (NOAA)',
@@ -631,7 +651,7 @@ const AXES: Record<string, AxisConfig> = {
     ],
     staticYear: 2022,
     infoWidth: 311,
-    infoHeight: 150
+    infoHeight: 190
   },
   risk: {
     label: 'Disasters',
@@ -664,7 +684,8 @@ const AXES: Record<string, AxisConfig> = {
       if (!lines.length) return headline;
       return [headline, ...lines].join('\n');
     },
-    description: 'Chance of dying from a natural disaster here.\nBright = safe. Dark = dangerous. Hover for the per-hazard breakdown.',
+    description: 'Chance of dying from a natural disaster here. Hover for the per-hazard breakdown.',
+    defaultPreference: 'Highlights the safest places and fades out as the risk of death climbs.',
     whoIsThisFor: 'Homebuyers and anyone weighing combined exposure to earthquakes, floods, cyclones, tsunamis, volcanoes, droughts, wildfires, and landslides.',
     unitDescription: 'Annual probability of death, expressed as "1 in N per year". Also shown in deaths per million people per year for comparison. Reference: car crashes ~120, heart disease ~2,000, all causes ~8,000 deaths per million per year.',
     source: 'See sources panel',
@@ -694,7 +715,7 @@ const AXES: Record<string, AxisConfig> = {
     ],
     staticYear: 2023,
     infoWidth: 311,
-    infoHeight: 184
+    infoHeight: 240
   },
   ...((): Record<string, AxisConfig> => {
     // Each hazard renders the raw physical intensity from
@@ -704,7 +725,7 @@ const AXES: Record<string, AxisConfig> = {
     // is loaded, we use the exact stored intensity instead.
     type HazSpec = {
       id: string; hazardKey: string; label: string; hoverLabel: string;
-      who: string; desc: string;
+      who: string; desc: string; pref: string;
       sources: { name: string; url?: string }[];
       // pmtiles encoding (mirror build_tiles.py)
       dataMax: number;
@@ -727,7 +748,8 @@ const AXES: Record<string, AxisConfig> = {
       {
         id: 'eq', hazardKey: 'earthquake', label: 'Earthquakes', hoverLabel: 'PGA',
         who: 'Anyone weighing seismic exposure (Pacific Rim, Himalaya, Andes, East African Rift).',
-        desc: 'Peak Ground Acceleration with a 1-in-475-year return period.\nBright = stable. Dark = severe shaking.',
+        desc: 'Peak Ground Acceleration with a 1-in-475-year return period. Higher means stronger expected shaking.',
+        pref: 'Highlights seismically stable ground and fades out toward severe-shaking zones.',
         sources: [
           { name: 'GEM Global Seismic Hazard Map v2023.1 (PGA, 475-yr)', url: 'https://maps.openquake.org/map/global-seismic-hazard-map/' },
         ],
@@ -745,7 +767,8 @@ const AXES: Record<string, AxisConfig> = {
       {
         id: 'wildfire', hazardKey: 'wildfire', label: 'Wildfires', hoverLabel: 'Fire risk',
         who: 'Anyone in fire-prone climates (Mediterranean, western US, southern Australia).',
-        desc: 'Fire-conducive months (drought + fuel proxy).\nBright = low fire risk. Dark = chronic fire weather.',
+        desc: 'Fire-conducive months (drought + fuel proxy). Higher means more of the year sits in fire weather.',
+        pref: 'Highlights places with little fire weather and fades out toward chronic fire-prone regions.',
         sources: [
           { name: 'SPEI-12 drought-frequency proxy (vegetation-capped)', url: 'https://spei.csic.es/database.html' },
         ],
@@ -792,21 +815,26 @@ const AXES: Record<string, AxisConfig> = {
           return head;
         },
         description: h.desc,
+        defaultPreference: h.pref,
         whoIsThisFor: h.who,
         unitDescription: h.unitDescription,
         source: 'See sources panel',
         sources: h.sources,
         hoverLabel: h.hoverLabel,
-        defaultCurve: LINEAR_UP,
+        // Both hazard sub-axes encode intensity with high = worse (PGA,
+        // fire-conducive months), so they need the same descending curve
+        // as their `risk` parent. LINEAR_UP lit up the Ring of Fire and
+        // the Mediterranean as if they were the desirable places to be.
+        defaultCurve: LINEAR_DOWN,
         staticYear: 2023,
         infoWidth: 311,
-        infoHeight: 184,
+        infoHeight: 226,
       };
     }
     return out;
   })(),
   inet: {
-    label: 'Connectivity',
+    label: 'Internet speed',
     dataMin: 0,
     dataMax: 1000,
     unit: 'Mbps',
@@ -826,16 +854,16 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Blazing';
       return `${Math.round(val)} Mbps (${band})`;
     },
-    description: 'How fast the internet is.\nBright = blazing fast. Dark = slow or nonexistent.',
+    description: 'How fast the internet is.',
+    defaultPreference: 'Brightens steadily with faster connections; slow or unconnected places are hidden.',
     whoIsThisFor: 'Digital nomads, remote workers, and anyone who needs reliable internet for work, streaming, or gaming.',
     unitDescription: 'Megabits per second = how quickly data flows. 10 Mbps = basic browsing, 25 = video calls, 100+ = fast downloads. South Korea ~200, rural Africa ~2.',
     source: 'Ookla Speedtest Intelligence (Q4 2024)',
     sourceUrl: 'https://www.speedtest.net/insights/blog/best-internet-countries/',
-    hoverLabel: 'Internet speed',
     defaultCurve: LINEAR_UP,
     staticYear: 2024,
     infoWidth: 308,
-    infoHeight: 184
+    infoHeight: 207
   },
   hcare: {
     label: 'Healthcare',
@@ -853,7 +881,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Very remote';
       return `${mins} min (${band})`;
     },
-    description: 'How close you are to a hospital or clinic.\nBright = nearby healthcare. Dark = hours away from medical help.',
+    description: 'How close you are to a hospital or clinic.',
+    defaultPreference: 'Brightens steadily as hospitals get closer; places hours from medical help are hidden.',
     whoIsThisFor: 'Retirees, parents, or people with medical conditions who need quick access to emergency care.',
     unitDescription: 'Travel time to the nearest hospital. Under 15 min = excellent access (most cities). 60+ min = remote. Parts of rural Africa or Amazon can exceed 3 hours.',
     source: 'Malaria Atlas Project (Oxford / MAP)',
@@ -862,7 +891,7 @@ const AXES: Record<string, AxisConfig> = {
     defaultCurve: LINEAR_UP,
     staticYear: 2019,
     infoWidth: 323,
-    infoHeight: 183
+    infoHeight: 190
   },
   vista: {
     label: 'Vista',
@@ -894,7 +923,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Panoramic';
       return `${score}/100 (${band})`;
     },
-    description: 'How much of the surrounding landscape is visible from each spot.\nBright = sweeping panoramas. Dark = boxed in or no view at all.',
+    description: 'How much of the surrounding landscape is visible from each spot.',
+    defaultPreference: 'Brightens with a wider view; everything below the global 75th percentile is hidden outright.',
     whoIsThisFor: 'House hunters chasing a view, photographers, and anyone who values being able to see far.',
     unitDescription: 'Score 0-100 from a global viewshed analysis, rescaled so 0 = the global 75th percentile and 100 = the global maximum. The bottom 75% of cells (valley floors, forest interiors, plains) collapse to 0 because the useful signal is all in the top quartile -- mountain ridgelines, sea cliffs, and high plateaus rank highest.',
     source: 'alltheviews.world (Buckley-Houston, Berger, Dart)',
@@ -903,7 +933,7 @@ const AXES: Record<string, AxisConfig> = {
     defaultCurve: LINEAR_UP,
     staticYear: 2025,
     infoWidth: 320,
-    infoHeight: 195
+    infoHeight: 256
   },
   travel: {
     label: 'City',
@@ -927,16 +957,17 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Wilderness';
       return `${v} (${band})`;
     },
-    description: 'How long it takes to reach the nearest city.\nBright = close to urban life. Dark = deep wilderness.',
+    description: 'How long it takes to reach the nearest town or city of 20,000+ people.',
+    defaultPreference: 'Brightens steadily as towns get closer; deep wilderness is hidden. Flip the curve to hunt for off-grid remoteness.',
     whoIsThisFor: 'People who want access to shops, airports, and culture vs those seeking true off-grid remoteness.',
-    unitDescription: 'Travel time in minutes. Most suburbs < 30 min. Rural towns ~1-2 hrs. Remote Amazon or Siberia can exceed 12 hrs.',
-    source: 'Weiss et al. 2018 (Nature)',
+    unitDescription: 'Travel time in minutes to any settlement of 20,000 people or more -- big enough for shops, schools and a bus out. Towns and cities themselves read 0. Most suburbs < 30 min, rural areas 1-2 hrs, and the deep Amazon or Siberia can exceed 12 hrs.',
+    source: 'Nelson et al. 2019 (Scientific Data)',
     sourceUrl: 'https://figshare.com/articles/dataset/Travel_time_to_cities_and_ports_in_the_year_2015/7638134',
     hoverLabel: 'Travel to city',
     defaultCurve: LINEAR_UP,
     staticYear: 2015,
     infoWidth: 310,
-    infoHeight: 183
+    infoHeight: 256
   },
   free: {
     label: 'Freedom',
@@ -954,7 +985,8 @@ const AXES: Record<string, AxisConfig> = {
       else band = 'Fully free';
       return `${v}/100 (${band})`;
     },
-    description: 'Scoring based on seven topics:\n• Electoral Process\n• Political Pluralism & Participation\n• Functioning of Government\n• Freedom of Expression & Belief\n• Associational & Organizational Rights\n• Rule of Law\n• Personal Autonomy\n\nBright = free and transparent. Dark = authoritarian and corrupt.',
+    description: 'Scoring based on seven topics:\n• Electoral Process\n• Political Pluralism & Participation\n• Functioning of Government\n• Freedom of Expression & Belief\n• Associational & Organizational Rights\n• Rule of Law\n• Personal Autonomy',
+    defaultPreference: 'Brightens steadily with higher freedom and transparency scores; authoritarian states are hidden.',
     whoIsThisFor: 'Combines Freedom House (political rights) and Transparency International (corruption perception).',
     unitDescription: 'Finland ~95, USA ~75, Russia ~20. Hover for exact sub-scores.',
     source: 'Freedom House FIW + Transparency International CPI',
@@ -971,7 +1003,8 @@ const AXES: Record<string, AxisConfig> = {
     unit: '',
     formatValue: (norm) => (norm >= 0.5 ? 'on' : 'off'),
     formatHover: (norm) => (norm >= 0.5 ? 'on (Selected)' : 'off (Excluded)'),
-    description: 'Paint your own regions on the map to include or exclude areas that matter to you.\nBright = selected. Dark = excluded.',
+    description: 'Paint your own regions on the map to include or exclude areas that matter to you.',
+    defaultPreference: 'No curve to tune -- painted areas are bright, everything else is excluded.',
     whoIsThisFor: 'You! Manually highlight or block out regions for your personal formula.',
     unitDescription: 'On or off. Painted areas score full marks in formulas. Use with other layers: "draw * temp" shows temperature only in your painted region.',
     source: 'You! (hand-drawn)',
@@ -991,6 +1024,7 @@ const AXES: Record<string, AxisConfig> = {
     formatValue: (norm) => norm.toFixed(2),
     formatHover: (norm) => `score ${norm.toFixed(2)}`,
     description: 'Remaps the formula\'s composite result before it gets coloured.\nPush the highlight down to spotlight only the very best matches, or pull it up to keep more of the map visible.',
+    defaultPreference: 'Straight pass-through, so the formula result is coloured exactly as computed.',
     whoIsThisFor: 'Anyone tuning a multi-axis formula -- sharpen the contrast without touching the formula itself.',
     unitDescription: 'X is the formula result in [0, 1]. Sharp drops at the right hide everything but the top scores; pulling the right corner up reveals more of the long tail.',
     source: 'derived',
@@ -1040,7 +1074,6 @@ const CYCLE_AXIS_IDS: string[] = (() => {
 // catalog and saved hashes).
 const DISPLAY_IDS: Record<string, string> = {
   risk: 'dis',
-  inet: 'conn',
   travel: 'city',
   // Hazard sub-axes get unique short codes -- distinct from every
   // main-axis hotkey and from each other, so the menu shows a clear
@@ -1518,7 +1551,7 @@ export default function App() {
     // axis can take effect immediately.
     setPreviewAxis(null);
     if (isSingleAxisFormula(formulaRef.current)) {
-      // Show the friendly short hint (e.g. "dis", "conn") in the formula
+      // Show the friendly short hint (e.g. "dis", "city") in the formula
       // bar when one is defined, so the formula matches what the menu
       // displays. The alias resolves back to the canonical id at parse time.
       const formulaText = DISPLAY_IDS[axisId] ?? axisId;
@@ -2623,6 +2656,7 @@ export default function App() {
         const renderInfo = (w: number, h: number) => (
           <div className="axis-detail-content" style={{ width: w, height: h, overflowY: 'auto', paddingRight: '4px' }}>
             <p style={{ whiteSpace: 'pre-line' }}>{axis.description}</p>
+            {axis.defaultPreference && <p className="axis-detail-default" style={{ marginTop: '8px' }}><strong>Default curve:</strong> {axis.defaultPreference}</p>}
             {axis.whoIsThisFor && <p className="axis-detail-who" style={{ marginTop: '8px' }}><strong>Who is this for:</strong> {axis.whoIsThisFor}</p>}
             {axis.unitDescription && <p className="axis-detail-units" style={{ marginTop: '8px' }}>{axis.unitDescription}</p>}
             {axis.sources && axis.sources.length > 0 ? (

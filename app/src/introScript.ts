@@ -226,7 +226,7 @@ export const AXIS_CHIPS: AxisChip[] = [
     axisId: 'inet',
     label: 'Internet',
     blurb: 'How important is fast internet?',
-    revealNoun: 'Connectivity',
+    revealNoun: 'Internet speed',
     presets: [
       { id: 'fiber',     label: 'Need fiber',    hint: 'Remote work, streaming', curve: RAMP_UP },
       { id: 'signal',    label: 'Just a signal', hint: 'Email + maps is enough', curve: tent(0.55, 0.30) },
